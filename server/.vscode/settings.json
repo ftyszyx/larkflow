@@ -1,0 +1,13 @@
+{
+   "files.associations": {
+        "*.sql": "postgres"
+    },
+    "[sql]": {
+        "editor.defaultFormatter": "ReneSaarsoo.sql-formatter-vsc"
+    },
+  "deno.enablePaths": [
+    "./"
+  ],
+  "editor.inlayHints.enabled": "off",
+  "deno.enable": true
+}
