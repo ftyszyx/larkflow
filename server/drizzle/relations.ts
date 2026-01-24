@@ -1,37 +1,73 @@
 import { relations } from "drizzle-orm/relations";
-import { articles, articleSources, assets, publishJobs, syncRuns } from "./schema.ts";
+import { workspaces, integrations, articles, assets, articlePublications, workspaceMembers, users } from "./schema";
 
-export const articleSourcesRelations = relations(articleSources, ({ one }) => ({
-	article: one(articles, {
-		fields: [articleSources.articleId],
-		references: [articles.id]
+export const integrationsRelations = relations(integrations, ({one, many}) => ({
+	workspace: one(workspaces, {
+		fields: [integrations.workspaceId],
+		references: [workspaces.id]
 	}),
+	articles: many(articles),
+	articlePublications: many(articlePublications),
 }));
 
-export const articlesRelations = relations(articles, ({ many }) => ({
-	articleSources: many(articleSources),
+export const workspacesRelations = relations(workspaces, ({many}) => ({
+	integrations: many(integrations),
+	articles: many(articles),
 	assets: many(assets),
-	publishJobs: many(publishJobs),
-	syncRuns: many(syncRuns),
+	articlePublications: many(articlePublications),
+	workspaceMembers: many(workspaceMembers),
 }));
 
-export const assetsRelations = relations(assets, ({ one }) => ({
+export const articlesRelations = relations(articles, ({one, many}) => ({
+	workspace: one(workspaces, {
+		fields: [articles.workspaceId],
+		references: [workspaces.id]
+	}),
+	integration: one(integrations, {
+		fields: [articles.integrationId],
+		references: [integrations.id]
+	}),
+	assets: many(assets),
+	articlePublications: many(articlePublications),
+}));
+
+export const assetsRelations = relations(assets, ({one}) => ({
 	article: one(articles, {
 		fields: [assets.articleId],
 		references: [articles.id]
 	}),
-}));
-
-export const publishJobsRelations = relations(publishJobs, ({ one }) => ({
-	article: one(articles, {
-		fields: [publishJobs.articleId],
-		references: [articles.id]
+	workspace: one(workspaces, {
+		fields: [assets.workspaceId],
+		references: [workspaces.id]
 	}),
 }));
 
-export const syncRunsRelations = relations(syncRuns, ({ one }) => ({
+export const articlePublicationsRelations = relations(articlePublications, ({one}) => ({
+	workspace: one(workspaces, {
+		fields: [articlePublications.workspaceId],
+		references: [workspaces.id]
+	}),
 	article: one(articles, {
-		fields: [syncRuns.articleId],
+		fields: [articlePublications.articleId],
 		references: [articles.id]
 	}),
+	integration: one(integrations, {
+		fields: [articlePublications.integrationId],
+		references: [integrations.id]
+	}),
+}));
+
+export const workspaceMembersRelations = relations(workspaceMembers, ({one}) => ({
+	workspace: one(workspaces, {
+		fields: [workspaceMembers.workspaceId],
+		references: [workspaces.id]
+	}),
+	user: one(users, {
+		fields: [workspaceMembers.userId],
+		references: [users.id]
+	}),
+}));
+
+export const usersRelations = relations(users, ({many}) => ({
+	workspaceMembers: many(workspaceMembers),
 }));

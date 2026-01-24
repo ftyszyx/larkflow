@@ -1,17 +1,53 @@
-CREATE TABLE "article_sources" (
-	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "article_sources_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
-	"article_id" bigint NOT NULL,
-	"source" text NOT NULL,
-	"source_doc_token" text NOT NULL,
-	"source_updated_at" timestamptz,
+-- 用户表
+CREATE TABLE "users" (
+	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "users_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
+	"email" text NOT NULL,
+	"name" text,
 	"created_at" timestamptz DEFAULT now() NOT NULL,
 	"updated_at" timestamptz DEFAULT now() NOT NULL
 );
---> statement-breakpoint
+-- workspace表
+CREATE TABLE "workspaces" (
+	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "workspaces_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
+	"name" text NOT NULL,
+	"created_at" timestamptz DEFAULT now() NOT NULL,
+	"updated_at" timestamptz DEFAULT now() NOT NULL
+);
+-- workspace成员
+CREATE TABLE "workspace_members" (
+	"workspace_id" bigint NOT NULL,
+	"user_id" bigint NOT NULL,
+	"role" text NOT NULL,
+	"created_at" timestamptz DEFAULT now() NOT NULL,
+	CONSTRAINT "workspace_members_pk" PRIMARY KEY ("workspace_id", "user_id"),
+	CONSTRAINT "workspace_members_role_check" CHECK ("role" IN ('owner', 'admin', 'member', 'viewer'))
+);
+--workspace下的平台列表配置  
+CREATE TABLE "integrations" (
+	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "integrations_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
+	"workspace_id" bigint NOT NULL,
+	"platform_type" integer NOT NULL,
+	"feishu_workspace_id" text,
+	"name" text NOT NULL,
+	"status" text DEFAULT 'connected' NOT NULL,
+	"config" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"access_token" text,
+	"refresh_token" text,
+	"expires_at" timestamptz,
+	"extra" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"created_at" timestamptz DEFAULT now() NOT NULL,
+	"updated_at" timestamptz DEFAULT now() NOT NULL,
+	CONSTRAINT "integrations_status_check" CHECK ("status" IN ('connected', 'invalid', 'disabled'))
+);
+
+-- 文章表(从飞书知识库同步的文章)
 CREATE TABLE "articles" (
 	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "articles_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
+	"workspace_id" bigint NOT NULL,
+	"integration_id" bigint NOT NULL,
+	"source_doc_token" text NOT NULL,
+	"source_updated_at" timestamptz,
 	"title" text NOT NULL,
-	"summary" text,
 	"cover_asset_id" bigint,
 	"cover_url" text,
 	"content_md" text DEFAULT '' NOT NULL,
@@ -19,11 +55,14 @@ CREATE TABLE "articles" (
 	"status" text DEFAULT 'draft' NOT NULL,
 	"created_at" timestamptz DEFAULT now() NOT NULL,
 	"updated_at" timestamptz DEFAULT now() NOT NULL,
+	"deleted_at" timestamptz,
 	CONSTRAINT "articles_status_check" CHECK ("status" IN ('draft', 'ready', 'published', 'archived'))
 );
---> statement-breakpoint
+
+-- 文章附件表
 CREATE TABLE "assets" (
 	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "assets_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
+	"workspace_id" bigint NOT NULL,
 	"article_id" bigint,
 	"type" text DEFAULT 'image' NOT NULL,
 	"source_url" text,
@@ -34,11 +73,15 @@ CREATE TABLE "assets" (
 	"oss_key" text,
 	"oss_url" text,
 	"created_at" timestamptz DEFAULT now() NOT NULL,
-	CONSTRAINT "assets_type_check" CHECK ("type" IN ('image', 'cover'))
+	CONSTRAINT "assets_type_check" CHECK ("type" IN ('image', 'file'))
 );
---> statement-breakpoint
+
+
+--使用postgres做消息队列
+-- 任务表
 CREATE TABLE "jobs" (
 	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "jobs_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
+	"workspace_id" bigint,
 	"queue" text NOT NULL,
 	"payload" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"attempts" integer DEFAULT 0 NOT NULL,
@@ -49,49 +92,62 @@ CREATE TABLE "jobs" (
 	"created_at" timestamptz DEFAULT now() NOT NULL,
 	"updated_at" timestamptz DEFAULT now() NOT NULL
 );
---> statement-breakpoint
-CREATE TABLE "publish_jobs" (
-	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "publish_jobs_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
+
+-- 发布记录表
+CREATE TABLE "article_publications" (
+	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "article_publications_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
+	"workspace_id" bigint NOT NULL,
 	"article_id" bigint NOT NULL,
-	"platform" text NOT NULL,
-	"status" text DEFAULT 'queued' NOT NULL,
-	"error" text,
-	"request_payload" jsonb DEFAULT '{}'::jsonb NOT NULL,
-	"response_payload" jsonb DEFAULT '{}'::jsonb NOT NULL,
-	"remote_draft_id" text,
-	"remote_publish_id" text,
+	"integration_id" bigint NOT NULL,
+	"platform_type" integer NOT NULL,
+	"status" text DEFAULT 'draft' NOT NULL,
+	"remote_id" text,
+	"remote_url" text,
+	"published_at" timestamptz,
 	"created_at" timestamptz DEFAULT now() NOT NULL,
 	"updated_at" timestamptz DEFAULT now() NOT NULL,
-	CONSTRAINT "publish_jobs_status_check" CHECK ("status" IN ('queued', 'running', 'success', 'failed'))
+	CONSTRAINT "article_publications_status_check" CHECK ("status" IN ('draft', 'publishing', 'published', 'failed', 'archived'))
 );
---> statement-breakpoint
-CREATE TABLE "sync_runs" (
-	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "sync_runs_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
-	"source" text NOT NULL,
-	"source_doc_token" text NOT NULL,
-	"source_updated_at" timestamptz,
-	"article_id" bigint,
-	"status" text NOT NULL,
-	"error" text,
-	"started_at" timestamptz,
-	"finished_at" timestamptz,
-	"created_at" timestamptz DEFAULT now() NOT NULL
-);
---> statement-breakpoint
-ALTER TABLE "article_sources" ADD CONSTRAINT "article_sources_article_id_articles_id_fk" FOREIGN KEY ("article_id") REFERENCES "public"."articles"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "assets" ADD CONSTRAINT "assets_article_id_articles_id_fk" FOREIGN KEY ("article_id") REFERENCES "public"."articles"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "publish_jobs" ADD CONSTRAINT "publish_jobs_article_id_articles_id_fk" FOREIGN KEY ("article_id") REFERENCES "public"."articles"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "sync_runs" ADD CONSTRAINT "sync_runs_article_id_articles_id_fk" FOREIGN KEY ("article_id") REFERENCES "public"."articles"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX "uq_article_sources_source_doc" ON "article_sources" USING btree ("source","source_doc_token");--> statement-breakpoint
-CREATE INDEX "idx_article_sources_doc_updated_at" ON "article_sources" USING btree ("source","source_doc_token","source_updated_at");--> statement-breakpoint
+
+-- 其它的配置
+-- workspace_members
+ALTER TABLE "workspace_members" ADD CONSTRAINT "workspace_members_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "workspace_members" ADD CONSTRAINT "workspace_members_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "idx_workspace_members_user_id" ON "workspace_members" USING btree ("user_id");--> statement-breakpoint
+
+-- users
+CREATE UNIQUE INDEX "uq_users_email" ON "users" USING btree ("email");--> statement-breakpoint
+
+-- integrations
+ALTER TABLE "integrations" ADD CONSTRAINT "integrations_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "idx_integrations_workspace_platform" ON "integrations" USING btree ("workspace_id","platform_type");--> statement-breakpoint
+
+-- articles
+ALTER TABLE "articles" ADD CONSTRAINT "articles_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "articles" ADD CONSTRAINT "articles_integration_id_integrations_id_fk" FOREIGN KEY ("integration_id") REFERENCES "public"."integrations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "idx_articles_updated_at" ON "articles" USING btree ("updated_at");--> statement-breakpoint
 CREATE INDEX "idx_articles_status" ON "articles" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "idx_articles_workspace_updated_at" ON "articles" USING btree ("workspace_id","updated_at");--> statement-breakpoint
+CREATE INDEX "idx_articles_workspace_status" ON "articles" USING btree ("workspace_id","status");--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_articles_integration_doc" ON "articles" USING btree ("integration_id","source_doc_token");--> statement-breakpoint
+CREATE INDEX "idx_articles_doc_updated_at" ON "articles" USING btree ("integration_id","source_doc_token","source_updated_at");
+
+-- article_sources
+-- assets
+ALTER TABLE "assets" ADD CONSTRAINT "assets_article_id_articles_id_fk" FOREIGN KEY ("article_id") REFERENCES "public"."articles"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "assets" ADD CONSTRAINT "assets_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "uq_assets_sha256" ON "assets" USING btree ("sha256");--> statement-breakpoint
 CREATE INDEX "idx_assets_article_id" ON "assets" USING btree ("article_id");--> statement-breakpoint
+CREATE INDEX "idx_assets_workspace_article_id" ON "assets" USING btree ("workspace_id","article_id");--> statement-breakpoint
+
+-- jobs
 CREATE INDEX "idx_jobs_queue_sched" ON "jobs" USING btree ("queue","scheduled_at");--> statement-breakpoint
 CREATE INDEX "idx_jobs_queue_lock" ON "jobs" USING btree ("queue","locked_until");--> statement-breakpoint
-CREATE INDEX "idx_publish_jobs_article" ON "publish_jobs" USING btree ("article_id","created_at");--> statement-breakpoint
-CREATE INDEX "idx_publish_jobs_status" ON "publish_jobs" USING btree ("status");--> statement-breakpoint
-CREATE INDEX "idx_publish_jobs_platform" ON "publish_jobs" USING btree ("platform");--> statement-breakpoint
-CREATE INDEX "idx_sync_runs_doc" ON "sync_runs" USING btree ("source","source_doc_token","created_at");--> statement-breakpoint
-CREATE INDEX "idx_sync_runs_status" ON "sync_runs" USING btree ("status");
+CREATE INDEX "idx_jobs_workspace_queue_sched" ON "jobs" USING btree ("workspace_id","queue","scheduled_at");--> statement-breakpoint
+
+-- article_publications
+ALTER TABLE "article_publications" ADD CONSTRAINT "article_publications_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "article_publications" ADD CONSTRAINT "article_publications_article_id_articles_id_fk" FOREIGN KEY ("article_id") REFERENCES "public"."articles"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "article_publications" ADD CONSTRAINT "article_publications_integration_id_integrations_id_fk" FOREIGN KEY ("integration_id") REFERENCES "public"."integrations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_article_publications_article_integration_platform" ON "article_publications" USING btree ("article_id","integration_id","platform_type");--> statement-breakpoint
+CREATE INDEX "idx_article_publications_workspace_updated_at" ON "article_publications" USING btree ("workspace_id","updated_at");--> statement-breakpoint
