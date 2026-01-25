@@ -19,6 +19,14 @@ Deno.test("GET /articles returns only workspace articles and supports pagination
   const workspaceId1 = w1.rows[0].id;
   const workspaceId2 = w2.rows[0].id;
 
+  const integration = await db.execute<{ id: unknown }>(sql`
+    insert into integrations(workspace_id, platform_type, name, status, config)
+    values (${workspaceId1}, 1, 'i1', 'connected', '{}'::jsonb)
+    returning id
+  `);
+  const integrationId = Number(integration.rows[0].id);
+  if (!Number.isFinite(integrationId)) throw new Error("failed to create integration");
+
   const u = await db.execute<{ id: number }>(sql`
     insert into users(email, name) values (${email}, 'tester')
     on conflict(email) do update set name = excluded.name, updated_at = now()
@@ -35,9 +43,9 @@ Deno.test("GET /articles returns only workspace articles and supports pagination
   await db.execute(sql`
     insert into articles(workspace_id, integration_id, source_doc_token, title, content_md, content_md_final, status)
     values
-      (${workspaceId1}, 1, 'doc1', 'a1', '', '', 'draft'),
-      (${workspaceId1}, 1, 'doc2', 'a2', '', '', 'draft'),
-      (${workspaceId2}, 1, 'doc3', 'b1', '', '', 'draft')
+      (${workspaceId1}, ${integrationId}, 'doc1', 'a1', '', '', 'draft'),
+      (${workspaceId1}, ${integrationId}, 'doc2', 'a2', '', '', 'draft'),
+      (${workspaceId2}, ${integrationId}, 'doc3', 'b1', '', '', 'draft')
   `);
 
   const res = await app.request("/articles?limit=1&offset=0", {

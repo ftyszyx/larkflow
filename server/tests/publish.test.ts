@@ -33,14 +33,16 @@ Deno.test("POST /articles/:id/publish creates job and sets publication to publis
     values (${workspaceId}, 1, 'i1', 'connected', '{}'::jsonb)
     returning id
   `);
-  const integrationId = integration.rows[0].id;
+  const integrationId = Number(integration.rows[0].id);
+  if (!Number.isFinite(integrationId)) throw new Error("failed to create integration");
 
   const article = await db.execute<{ id: number }>(sql`
     insert into articles(workspace_id, integration_id, source_doc_token, title, content_md, content_md_final, status)
     values (${workspaceId}, ${integrationId}, 'doc1', 'title', '', '', 'draft')
     returning id
   `);
-  const articleId = article.rows[0].id;
+  const articleId = Number(article.rows[0].id);
+  if (!Number.isFinite(articleId)) throw new Error("failed to create article");
 
   const res = await app.request(`/articles/${articleId}/publish`, {
     method: "POST",
