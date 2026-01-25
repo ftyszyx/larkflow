@@ -1,11 +1,12 @@
 import { relations } from "drizzle-orm/relations";
-import { workspaces, integrations, articles, assets, articlePublications, workspaceMembers, users } from "./schema";
+import { workspaces, integrations, feishuSpaceSyncs, articles, assets, articlePublications, workspaceMembers, users } from "./schema";
 
 export const integrationsRelations = relations(integrations, ({one, many}) => ({
 	workspace: one(workspaces, {
 		fields: [integrations.workspaceId],
 		references: [workspaces.id]
 	}),
+	feishuSpaceSyncs: many(feishuSpaceSyncs),
 	articles: many(articles),
 	articlePublications: many(articlePublications),
 }));
@@ -16,6 +17,13 @@ export const workspacesRelations = relations(workspaces, ({many}) => ({
 	assets: many(assets),
 	articlePublications: many(articlePublications),
 	workspaceMembers: many(workspaceMembers),
+}));
+
+export const feishuSpaceSyncsRelations = relations(feishuSpaceSyncs, ({one}) => ({
+	integration: one(integrations, {
+		fields: [feishuSpaceSyncs.integrationId],
+		references: [integrations.id]
+	}),
 }));
 
 export const articlesRelations = relations(articles, ({one, many}) => ({

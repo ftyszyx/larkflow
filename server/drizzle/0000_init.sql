@@ -40,6 +40,19 @@ CREATE TABLE "integrations" (
 	CONSTRAINT "integrations_status_check" CHECK ("status" IN ('connected', 'invalid', 'disabled'))
 );
 
+-- 飞书空间同步状态表
+CREATE TABLE "feishu_space_syncs" (
+	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "feishu_space_syncs_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
+	"integration_id" bigint NOT NULL,
+	"doc_token" text NOT NULL,
+	"status" text DEFAULT 'idle' NOT NULL,
+	"last_synced_at" timestamptz,
+	"last_error" text,
+	"created_at" timestamptz DEFAULT now() NOT NULL,
+	"updated_at" timestamptz DEFAULT now() NOT NULL,
+	CONSTRAINT "feishu_space_syncs_status_check" CHECK ("status" IN ('idle', 'syncing', 'failed', 'disabled'))
+);
+
 -- 文章表(从飞书知识库同步的文章)
 CREATE TABLE "articles" (
 	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "articles_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
@@ -121,6 +134,11 @@ CREATE UNIQUE INDEX "uq_users_email" ON "users" USING btree ("email");--> statem
 -- integrations
 ALTER TABLE "integrations" ADD CONSTRAINT "integrations_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "idx_integrations_workspace_platform" ON "integrations" USING btree ("workspace_id","platform_type");--> statement-breakpoint
+
+-- feishu_space_syncs
+ALTER TABLE "feishu_space_syncs" ADD CONSTRAINT "feishu_space_syncs_integration_id_integrations_id_fk" FOREIGN KEY ("integration_id") REFERENCES "public"."integrations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_feishu_space_syncs_integration_doc" ON "feishu_space_syncs" USING btree ("integration_id","doc_token");--> statement-breakpoint
+CREATE INDEX "idx_feishu_space_syncs_integration_status" ON "feishu_space_syncs" USING btree ("integration_id","status");--> statement-breakpoint
 
 -- articles
 ALTER TABLE "articles" ADD CONSTRAINT "articles_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

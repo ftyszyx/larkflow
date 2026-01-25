@@ -68,6 +68,28 @@ export const integrations = pgTable("integrations", {
 	check("integrations_status_check", sql`status = ANY (ARRAY['connected'::text, 'invalid'::text, 'disabled'::text])`),
 ]);
 
+export const feishuSpaceSyncs = pgTable("feishu_space_syncs", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "feishu_space_syncs_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	integrationId: bigint("integration_id", { mode: "number" }).notNull(),
+	docToken: text("doc_token").notNull(),
+	status: text().default('idle').notNull(),
+	lastSyncedAt: timestamp("last_synced_at", { withTimezone: true, mode: 'string' }),
+	lastError: text("last_error"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_feishu_space_syncs_integration_status").using("btree", table.integrationId.asc().nullsLast().op("int8_ops"), table.status.asc().nullsLast().op("text_ops")),
+	uniqueIndex("uq_feishu_space_syncs_integration_doc").using("btree", table.integrationId.asc().nullsLast().op("text_ops"), table.docToken.asc().nullsLast().op("int8_ops")),
+	foreignKey({
+			columns: [table.integrationId],
+			foreignColumns: [integrations.id],
+			name: "feishu_space_syncs_integration_id_integrations_id_fk"
+		}).onDelete("cascade"),
+	check("feishu_space_syncs_status_check", sql`status = ANY (ARRAY['idle'::text, 'syncing'::text, 'failed'::text, 'disabled'::text])`),
+]);
+
 export const articles = pgTable("articles", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "articles_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
