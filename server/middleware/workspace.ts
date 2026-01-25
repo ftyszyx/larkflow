@@ -13,8 +13,10 @@ const getHeader = (c: Parameters<MiddlewareHandler<AppEnv>>[0], name: string) =>
 };
 
 export const requireWorkspace: MiddlewareHandler<AppEnv> = async (c, next) => {
-  const raw = getHeader(c, "X-Workspace-Id");
-  if (!raw) return c.json({ message: "missing X-Workspace-Id" }, 400);
+  const rawParam = c.req.param("workspaceId");
+  const rawHeader = getHeader(c, "X-Workspace-Id");
+  const raw = (rawParam && rawParam.trim()) ? rawParam.trim() : (rawHeader && rawHeader.trim() ? rawHeader.trim() : null);
+  if (!raw) return c.json({ message: "missing workspaceId" }, 400);
   const workspaceId = Number(raw);
   if (!Number.isFinite(workspaceId)) return c.json({ message: "invalid X-Workspace-Id" }, 400);
   c.set("workspaceId", workspaceId);

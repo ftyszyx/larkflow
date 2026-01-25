@@ -11,6 +11,8 @@ import type { AppEnv } from "../types.ts";
 
 export const workspaceRoutes = new Hono<AppEnv>();
 
+export const workspaceScopedRoutes = new Hono<AppEnv>();
+
 workspaceRoutes.get("/workspaces", requireUser, async (c) => {
   const user = c.get("user") as AuthedUser;
   const data = await db
@@ -45,42 +47,39 @@ workspaceRoutes.post("/workspaces", requireUser, async (c) => {
   return c.json({ data: workspace }, 201);
 });
 
-workspaceRoutes.get(
-  "/workspaces/:id/members",
+workspaceScopedRoutes.get(
+  "/members",
   requireUser,
   requireWorkspace,
   requireWorkspaceMember,
   requireRole(["owner", "admin"]),
   async (c) => {
-    const workspaceId = Number(c.req.param("id"));
     const ctxWorkspaceId = c.get("workspaceId") as number;
-    if (!Number.isFinite(workspaceId)) return c.json({ message: "invalid id" }, 400);
-    if (workspaceId !== ctxWorkspaceId) return c.json({ message: "workspace mismatch" }, 400);
 
     const data = await db
       .select({
         userId: workspaceMembers.userId,
+        email: users.email,
+        name: users.name,
         role: workspaceMembers.role,
         createdAt: workspaceMembers.createdAt,
       })
       .from(workspaceMembers)
-      .where(eq(workspaceMembers.workspaceId, workspaceId));
+      .innerJoin(users, eq(workspaceMembers.userId, users.id))
+      .where(eq(workspaceMembers.workspaceId, ctxWorkspaceId));
 
     return c.json({ data });
   },
 );
 
-workspaceRoutes.post(
-  "/workspaces/:id/members",
+workspaceScopedRoutes.post(
+  "/members",
   requireUser,
   requireWorkspace,
   requireWorkspaceMember,
   requireRole(["owner", "admin"]),
   async (c) => {
-    const workspaceId = Number(c.req.param("id"));
     const ctxWorkspaceId = c.get("workspaceId") as number;
-    if (!Number.isFinite(workspaceId)) return c.json({ message: "invalid id" }, 400);
-    if (workspaceId !== ctxWorkspaceId) return c.json({ message: "workspace mismatch" }, 400);
 
     const body = (await c.req.json().catch(() => null)) as null | { email?: string; name?: string | null; role?: WorkspaceRole };
     if (!body?.email) return c.json({ message: "email is required" }, 400);
@@ -101,7 +100,7 @@ workspaceRoutes.post(
     const userId = newUser[0].id;
     const inserted = await db
       .insert(workspaceMembers)
-      .values({ workspaceId, userId, role: body.role })
+      .values({ workspaceId: ctxWorkspaceId, userId, role: body.role })
       .onConflictDoUpdate({
         target: [workspaceMembers.workspaceId, workspaceMembers.userId],
         set: {
@@ -114,17 +113,14 @@ workspaceRoutes.post(
   },
 );
 
-workspaceRoutes.patch(
-  "/workspaces/:id/members/:userId",
+workspaceScopedRoutes.patch(
+  "/members/:userId",
   requireUser,
   requireWorkspace,
   requireWorkspaceMember,
   requireRole(["owner", "admin"]),
   async (c) => {
-    const workspaceId = Number(c.req.param("id"));
     const ctxWorkspaceId = c.get("workspaceId") as number;
-    if (!Number.isFinite(workspaceId)) return c.json({ message: "invalid id" }, 400);
-    if (workspaceId !== ctxWorkspaceId) return c.json({ message: "workspace mismatch" }, 400);
 
     const targetUserId = Number(c.req.param("userId"));
     if (!Number.isFinite(targetUserId)) return c.json({ message: "invalid userId" }, 400);
@@ -135,7 +131,7 @@ workspaceRoutes.patch(
     const updated = await db
       .update(workspaceMembers)
       .set({ role: body.role })
-      .where(and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, targetUserId)))
+      .where(and(eq(workspaceMembers.workspaceId, ctxWorkspaceId), eq(workspaceMembers.userId, targetUserId)))
       .returning();
 
     if (updated.length === 0) return c.json({ message: "not found" }, 404);

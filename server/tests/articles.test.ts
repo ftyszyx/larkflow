@@ -1,14 +1,16 @@
 import { sql } from "drizzle-orm";
 import { app } from "../app.ts";
 import { db } from "../db.ts";
+import { signUserJwt } from "../utils/jwt.ts";
+import { hashPassword } from "../utils/password.ts";
 
-const headersFor = (workspaceId: number, email = "tester@example.com") => ({
-  "X-User-Email": email,
-  "X-Workspace-Id": String(workspaceId),
+const headersFor = (token: string) => ({
+  Authorization: `Bearer ${token}`,
 });
 
 Deno.test("GET /articles returns only workspace articles and supports pagination", async () => {
   const email = "tester@example.com";
+  const passwordHash = await hashPassword("pass");
 
   const w1 = await db.execute<{ id: number }>(sql`
     insert into workspaces(name) values ('w1') returning id
@@ -28,11 +30,13 @@ Deno.test("GET /articles returns only workspace articles and supports pagination
   if (!Number.isFinite(integrationId)) throw new Error("failed to create integration");
 
   const u = await db.execute<{ id: number }>(sql`
-    insert into users(email, name) values (${email}, 'tester')
-    on conflict(email) do update set name = excluded.name, updated_at = now()
+    insert into users(email, name, password_hash) values (${email}, 'tester', ${passwordHash})
+    on conflict(email) do update set name = excluded.name, password_hash = excluded.password_hash, updated_at = now()
     returning id
   `);
   const userId = u.rows[0].id;
+
+  const token = await signUserJwt({ uid: userId, email, isPlatformAdmin: false });
 
   await db.execute(sql`
     insert into workspace_members(workspace_id, user_id, role)
@@ -48,8 +52,8 @@ Deno.test("GET /articles returns only workspace articles and supports pagination
       (${workspaceId2}, ${integrationId}, 'doc3', 'b1', '', '', 'draft')
   `);
 
-  const res = await app.request("/articles?limit=1&offset=0", {
-    headers: headersFor(workspaceId1, email),
+  const res = await app.request(`/api/w/${workspaceId1}/articles?limit=1&offset=0`, {
+    headers: headersFor(token),
   });
   if (!res.ok) throw new Error(`unexpected status: ${res.status}`);
 

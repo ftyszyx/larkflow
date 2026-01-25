@@ -1,14 +1,16 @@
 import { sql } from "drizzle-orm";
 import { app } from "../app.ts";
 import { db } from "../db.ts";
+import { signUserJwt } from "../utils/jwt.ts";
+import { hashPassword } from "../utils/password.ts";
 
-const headersFor = (workspaceId: number, email = "publisher@example.com") => ({
-  "X-User-Email": email,
-  "X-Workspace-Id": String(workspaceId),
+const headersFor = (token: string) => ({
+  Authorization: `Bearer ${token}`,
 });
 
 Deno.test("POST /articles/:id/publish creates job and sets publication to publishing", async () => {
   const email = "publisher@example.com";
+  const passwordHash = await hashPassword("pass1234");
 
   const w = await db.execute<{ id: number }>(sql`
     insert into workspaces(name) values ('pub-w') returning id
@@ -16,11 +18,13 @@ Deno.test("POST /articles/:id/publish creates job and sets publication to publis
   const workspaceId = w.rows[0].id;
 
   const u = await db.execute<{ id: number }>(sql`
-    insert into users(email, name) values (${email}, 'publisher')
-    on conflict(email) do update set name = excluded.name, updated_at = now()
+    insert into users(email, name, password_hash) values (${email}, 'publisher', ${passwordHash})
+    on conflict(email) do update set name = excluded.name, password_hash = excluded.password_hash, updated_at = now()
     returning id
   `);
   const userId = u.rows[0].id;
+
+  const token = await signUserJwt({ uid: userId, email, isPlatformAdmin: false });
 
   await db.execute(sql`
     insert into workspace_members(workspace_id, user_id, role)
@@ -44,10 +48,10 @@ Deno.test("POST /articles/:id/publish creates job and sets publication to publis
   const articleId = Number(article.rows[0].id);
   if (!Number.isFinite(articleId)) throw new Error("failed to create article");
 
-  const res = await app.request(`/articles/${articleId}/publish`, {
+  const res = await app.request(`/api/w/${workspaceId}/articles/${articleId}/publish`, {
     method: "POST",
     headers: {
-      ...headersFor(workspaceId, email),
+      ...headersFor(token),
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ integrationId, platformType: 1 }),

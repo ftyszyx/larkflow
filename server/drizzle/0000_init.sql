@@ -3,6 +3,8 @@ CREATE TABLE "users" (
 	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "users_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
 	"email" text NOT NULL,
 	"name" text,
+	"password_hash" text,
+	"is_platform_admin" boolean DEFAULT false NOT NULL,
 	"created_at" timestamptz DEFAULT now() NOT NULL,
 	"updated_at" timestamptz DEFAULT now() NOT NULL
 );
@@ -21,6 +23,21 @@ CREATE TABLE "workspace_members" (
 	"created_at" timestamptz DEFAULT now() NOT NULL,
 	CONSTRAINT "workspace_members_pk" PRIMARY KEY ("workspace_id", "user_id"),
 	CONSTRAINT "workspace_members_role_check" CHECK ("role" IN ('owner', 'admin', 'member', 'viewer'))
+);
+
+-- workspace 邀请表（邀请制注册/加入）
+CREATE TABLE "workspace_invitations" (
+	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "workspace_invitations_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
+	"workspace_id" bigint NOT NULL,
+	"token" text NOT NULL,
+	"email" text NOT NULL,
+	"role" text NOT NULL,
+	"created_by_user_id" bigint NOT NULL,
+	"expires_at" timestamptz NOT NULL,
+	"accepted_at" timestamptz,
+	"created_at" timestamptz DEFAULT now() NOT NULL,
+	"updated_at" timestamptz DEFAULT now() NOT NULL,
+	CONSTRAINT "workspace_invitations_role_check" CHECK ("role" IN ('owner', 'admin', 'member', 'viewer'))
 );
 --workspace下的平台列表配置  
 CREATE TABLE "integrations" (
@@ -130,6 +147,12 @@ CREATE INDEX "idx_workspace_members_user_id" ON "workspace_members" USING btree 
 
 -- users
 CREATE UNIQUE INDEX "uq_users_email" ON "users" USING btree ("email");--> statement-breakpoint
+
+-- workspace_invitations
+ALTER TABLE "workspace_invitations" ADD CONSTRAINT "workspace_invitations_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "workspace_invitations" ADD CONSTRAINT "workspace_invitations_created_by_user_id_users_id_fk" FOREIGN KEY ("created_by_user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_workspace_invitations_token" ON "workspace_invitations" USING btree ("token");--> statement-breakpoint
+CREATE INDEX "idx_workspace_invitations_workspace_id" ON "workspace_invitations" USING btree ("workspace_id");--> statement-breakpoint
 
 -- integrations
 ALTER TABLE "integrations" ADD CONSTRAINT "integrations_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

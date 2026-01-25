@@ -1,4 +1,4 @@
-import { pgTable, index, bigint, text, jsonb, integer, timestamp, uniqueIndex, foreignKey, check, primaryKey } from "drizzle-orm/pg-core"
+import { pgTable, index, bigint, text, jsonb, integer, timestamp, uniqueIndex, boolean, foreignKey, check, primaryKey } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 
@@ -36,10 +36,42 @@ export const users = pgTable("users", {
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "users_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
 	email: text().notNull(),
 	name: text(),
+	passwordHash: text("password_hash"),
+	isPlatformAdmin: boolean("is_platform_admin").default(false).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	uniqueIndex("uq_users_email").using("btree", table.email.asc().nullsLast().op("text_ops")),
+]);
+
+export const workspaceInvitations = pgTable("workspace_invitations", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "workspace_invitations_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	workspaceId: bigint("workspace_id", { mode: "number" }).notNull(),
+	token: text().notNull(),
+	email: text().notNull(),
+	role: text().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	createdByUserId: bigint("created_by_user_id", { mode: "number" }).notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+	acceptedAt: timestamp("accepted_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_workspace_invitations_workspace_id").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops")),
+	uniqueIndex("uq_workspace_invitations_token").using("btree", table.token.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.workspaceId],
+			foreignColumns: [workspaces.id],
+			name: "workspace_invitations_workspace_id_workspaces_id_fk"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.createdByUserId],
+			foreignColumns: [users.id],
+			name: "workspace_invitations_created_by_user_id_users_id_fk"
+		}).onDelete("cascade"),
+	check("workspace_invitations_role_check", sql`role = ANY (ARRAY['owner'::text, 'admin'::text, 'member'::text, 'viewer'::text])`),
 ]);
 
 export const integrations = pgTable("integrations", {

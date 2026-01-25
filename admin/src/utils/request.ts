@@ -1,6 +1,6 @@
 import axios, { type AxiosResponse, type InternalAxiosRequestConfig } from 'axios'
 import router from '@/router'
-import { useContextStore } from '@/stores/context'
+import { useAuthStore } from '@/stores/auth'
 import { message } from 'ant-design-vue'
 
 const instance = axios.create({
@@ -9,11 +9,11 @@ const instance = axios.create({
 
 instance.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    const ctx = useContextStore()
+    const auth = useAuthStore()
     config.headers = config.headers ?? {}
 
-    for (const [k, v] of Object.entries(ctx.headers)) {
-      config.headers[k] = v
+    if (auth.token?.trim()) {
+      config.headers.Authorization = `Bearer ${auth.token}`
     }
 
     return config
@@ -32,7 +32,7 @@ instance.interceptors.response.use(
     const status = error.response?.status
     if (status === 401) {
       message.error('unauthorized')
-      router.push('/settings')
+      router.push('/login')
     } else {
       message.error(`${error.code ?? 'response_error'}: ${error.message}`)
     }
