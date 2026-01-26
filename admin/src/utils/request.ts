@@ -26,7 +26,17 @@ instance.interceptors.request.use(
 
 instance.interceptors.response.use(
   (response: AxiosResponse) => {
-    return response.data
+    const payload = response.data
+    if (payload && typeof payload === 'object' && 'code' in payload && 'message' in payload && 'data' in payload) {
+      const code = (payload as any).code
+      const msg = (payload as any).message
+      const data = (payload as any).data
+      if (code && Number(code) !== 0) {
+        message.error(String(msg || 'error'))
+      }
+      return data
+    }
+    return payload
   },
   (error: any) => {
     const status = error.response?.status
@@ -34,7 +44,12 @@ instance.interceptors.response.use(
       message.error('unauthorized')
       router.push('/login')
     } else {
-      message.error(`${error.code ?? 'response_error'}: ${error.message}`)
+      const backendMsg = error.response?.data?.message
+      if (backendMsg) {
+        message.error(String(backendMsg))
+      } else {
+        message.error(`${error.code ?? 'response_error'}: ${error.message}`)
+      }
     }
     return Promise.reject(error)
   },

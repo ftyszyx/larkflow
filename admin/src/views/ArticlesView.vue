@@ -17,7 +17,7 @@ const load = async () => {
   loading.value = true
   try {
     const res = await listArticles({ status: status.value, limit: limit.value, offset: offset.value })
-    data.value = res.data
+    data.value = res.items
   } finally {
     loading.value = false
   }
@@ -58,7 +58,7 @@ onMounted(load)
     </a-form>
 
     <a-table :dataSource="data" :loading="loading" rowKey="id" size="small" :pagination="false"
-      :customRow="(record) => ({ onClick: () => onRowClick(record as any) })"
+      :customRow="(record: unknown) => ({ onClick: () => onRowClick(record as any) })"
     >
       <a-table-column title="ID" dataIndex="id" />
       <a-table-column title="Title" dataIndex="title" />

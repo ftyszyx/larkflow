@@ -1,4 +1,7 @@
-import { eq, sql } from "drizzle-orm";
+/*
+init admin user and workspace
+ */
+import { eq } from "drizzle-orm";
 import { db } from "./db.ts";
 import { users, workspaceMembers, workspaces } from "./drizzle/schema.ts";
 import { hashPassword } from "./utils/password.ts";
@@ -15,17 +18,19 @@ export const bootstrapSeedAdmin = async () => {
   const userRows = await db
     .insert(users)
     .values({ email, name: "seed admin", passwordHash, isPlatformAdmin: true })
-    .onConflictDoUpdate({
+    .onConflictDoNothing({
       target: users.email,
-      set: {
-        passwordHash,
-        isPlatformAdmin: true,
-        updatedAt: sql`now()`,
-      },
     })
     .returning({ id: users.id });
 
-  const userId = userRows[0].id;
+  let userId: number;
+  if (userRows.length > 0) {
+    userId = userRows[0].id;
+  } else {
+    const [existingUser] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
+    if (!existingUser) return;
+    userId = existingUser.id;
+  }
 
   const [existingWs] = await db
     .select({ id: workspaces.id })
@@ -44,8 +49,7 @@ export const bootstrapSeedAdmin = async () => {
   await db
     .insert(workspaceMembers)
     .values({ workspaceId, userId, role: "owner" })
-    .onConflictDoUpdate({
+    .onConflictDoNothing({
       target: [workspaceMembers.workspaceId, workspaceMembers.userId],
-      set: { role: "owner" },
     });
 };

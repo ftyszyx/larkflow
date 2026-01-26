@@ -8,19 +8,19 @@ import { useAuthStore } from '@/stores/auth'
 const router = useRouter()
 const auth = useAuthStore()
 
-const email = ref('')
-const password = ref('')
+const email = ref('admin@example.com')
+const password = ref('123456')
 const loading = ref(false)
 
 const onSubmit = async () => {
   loading.value = true
   try {
     const res = await login(email.value.trim(), password.value)
-    auth.setSession(res.data.token)
+    auth.setSession(res.token)
 
     const meRes = await me()
-    auth.user = meRes.data.user
-    auth.workspaces = meRes.data.workspaces
+    auth.user = meRes.user
+    auth.workspaces = meRes.workspaces
 
     message.success('login success')
 

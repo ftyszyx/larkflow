@@ -17,8 +17,12 @@ const router = createRouter({
         { path: '/members', component: () => import('@/views/MembersView.vue') },
         { path: '/integrations', component: () => import('@/views/IntegrationsView.vue') },
         { path: '/sync', component: () => import('@/views/SyncView.vue') },
+        { path: '/jobs', component: () => import('@/views/JobsView.vue') },
         { path: '/articles', component: () => import('@/views/ArticlesView.vue') },
         { path: '/articles/:id', component: () => import('@/views/ArticleDetailView.vue') },
+        { path: '/settings', redirect: '/settings/oss' },
+        { path: '/settings/oss', component: () => import('@/views/SettingsOssView.vue') },
+        { path: '/settings/worker', component: () => import('@/views/SettingsWorkerView.vue') },
       ],
     },
   ],
@@ -42,6 +46,12 @@ router.beforeEach((to) => {
   }
 
   if (to.path.startsWith('/platform')) {
+    if (!auth.user) return { path: '/select-workspace' }
+    if (!auth.user.isPlatformAdmin) return { path: '/integrations' }
+    return true
+  }
+
+  if (to.path === '/settings/worker') {
     if (!auth.user) return { path: '/select-workspace' }
     if (!auth.user.isPlatformAdmin) return { path: '/integrations' }
     return true

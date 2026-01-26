@@ -6,6 +6,7 @@ import type { AppEnv } from "../types.ts";
 import { hashPassword } from "../utils/password.ts";
 import { requireUser } from "../middleware/auth.ts";
 import { requireRole, requireWorkspace, requireWorkspaceMember } from "../middleware/workspace.ts";
+import { fail, ok } from "../utils/response.ts";
 
 export const invitationRoutes = new Hono<AppEnv>();
 
@@ -19,8 +20,8 @@ invitationRoutes.post("/invitations/accept", async (c) => {
     name?: string | null;
     password?: string;
   };
-  if (!body?.token) return c.json({ message: "token is required" }, 400);
-  if (!body?.password) return c.json({ message: "password is required" }, 400);
+  if (!body?.token) return fail(c, 400, "token is required");
+  if (!body?.password) return fail(c, 400, "password is required");
 
   const token = body.token.trim();
 
@@ -30,8 +31,8 @@ invitationRoutes.post("/invitations/accept", async (c) => {
     .where(and(eq(workspaceInvitations.token, token), isNull(workspaceInvitations.acceptedAt)))
     .limit(1);
 
-  if (!inv) return c.json({ message: "invalid token" }, 404);
-  if (new Date(inv.expiresAt).getTime() < Date.now()) return c.json({ message: "token expired" }, 400);
+  if (!inv) return fail(c, 404, "invalid token");
+  if (new Date(inv.expiresAt).getTime() < Date.now()) return fail(c, 400, "token expired");
 
   const email = inv.email.trim().toLowerCase();
   const passwordHash = await hashPassword(body.password);
@@ -64,7 +65,7 @@ invitationRoutes.post("/invitations/accept", async (c) => {
     .set({ acceptedAt: sql`now()`, updatedAt: sql`now()` })
     .where(eq(workspaceInvitations.id, inv.id));
 
-  return c.json({ data: { workspaceId: inv.workspaceId } }, 201);
+  return ok(c, { workspaceId: inv.workspaceId }, 201);
 });
 
 invitationScopedRoutes.post(
@@ -80,13 +81,13 @@ invitationScopedRoutes.post(
     const body = (await c.req.json().catch(() => null)) as null | {
       email?: string;
       role?: WorkspaceRole;
-      expiresInDays?: number;
+      expires_in_days?: number;
     };
-    if (!body?.email) return c.json({ message: "email is required" }, 400);
-    if (!body?.role) return c.json({ message: "role is required" }, 400);
+    if (!body?.email) return fail(c, 400, "email is required");
+    if (!body?.role) return fail(c, 400, "role is required");
 
     const email = body.email.trim().toLowerCase();
-    const expiresInDays = Math.min(Math.max(Number(body.expiresInDays ?? 7) || 7, 1), 30);
+    const expiresInDays = Math.min(Math.max(Number(body.expires_in_days ?? 7) || 7, 1), 365);
     const expiresAt = new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000).toISOString();
 
     const bytes = crypto.getRandomValues(new Uint8Array(32));
@@ -107,6 +108,6 @@ invitationScopedRoutes.post(
       })
       .returning({ token: workspaceInvitations.token, expiresAt: workspaceInvitations.expiresAt });
 
-    return c.json({ data: rows[0] }, 201);
+    return ok(c, rows[0], 201);
   },
 );

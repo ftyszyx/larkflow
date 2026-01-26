@@ -1,5 +1,4 @@
 import request from '@/utils/request'
-import type { ApiObjectResponse } from '@/types/api'
 
 export type LoginResponse = {
   token: string
@@ -22,9 +21,9 @@ export type MeResponse = {
 }
 
 export const login = async (email: string, password: string) => {
-  return (await request.post('/auth/login', { email, password })) as ApiObjectResponse<LoginResponse>
+  return (await request.post('/auth/login', { email, password })) as LoginResponse
 }
 
 export const me = async () => {
-  return (await request.get('/auth/me')) as ApiObjectResponse<MeResponse>
+  return (await request.get('/auth/me')) as MeResponse
 }

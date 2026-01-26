@@ -33,7 +33,7 @@ const load = async () => {
   loading.value = true
   try {
     const res = await platformListWorkspaceMembers(workspaceId.value)
-    members.value = res.data
+    members.value = res
   } finally {
     loading.value = false
   }

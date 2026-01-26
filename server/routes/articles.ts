@@ -1,10 +1,12 @@
 import { Hono } from "hono";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull as _isNull, sql } from "drizzle-orm";
 import { db } from "../db.ts";
-import { articlePublications, articles, integrations, jobs } from "../drizzle/schema.ts";
+import { articlePublications, articles, assets as _assets, integrations, jobs } from "../drizzle/schema.ts";
+import { JobQueue } from "../constants/jobs.ts";
+import type { AppEnv } from "../types.ts";
 import { requireUser } from "../middleware/auth.ts";
 import { requireRole, requireWorkspace, requireWorkspaceMember } from "../middleware/workspace.ts";
-import type { AppEnv } from "../types.ts";
+import { fail, ok } from "../utils/response.ts";
 
 export const articleRoutes = new Hono<AppEnv>();
 
@@ -31,7 +33,7 @@ articleRoutes.get(
       .limit(limit)
       .offset(offset);
 
-    return c.json({ data, limit, offset });
+    return ok(c, { items: data, limit, offset });
   },
 );
 
@@ -43,7 +45,7 @@ articleRoutes.get(
   async (c) => {
     const workspaceId = c.get("workspaceId") as number;
     const id = Number(c.req.param("id"));
-    if (!Number.isFinite(id)) return c.json({ message: "invalid id" }, 400);
+    if (!Number.isFinite(id)) return fail(c, 400, "invalid id");
 
     const row = await db
       .select()
@@ -51,75 +53,104 @@ articleRoutes.get(
       .where(and(eq(articles.id, id), eq(articles.workspaceId, workspaceId)))
       .limit(1);
     const article = row[0];
-    if (!article) return c.json({ message: "not found" }, 404);
+    if (!article) return fail(c, 404, "not found");
 
-    return c.json({ data: article });
+    return ok(c, article);
   },
 );
 
-articleRoutes.post("/articles", async (c) => {
-  const body = (await c.req.json().catch(() => null)) as null | {
-    workspaceId?: number;
-    integrationId?: number;
-    sourceDocToken?: string;
-    title?: string;
-    coverAssetId?: number | null;
-    coverUrl?: string | null;
-    contentMd?: string;
-    contentMdFinal?: string;
-    status?: string;
-  };
+articleRoutes.post(
+  "/articles",
+  requireUser,
+  requireWorkspace,
+  requireWorkspaceMember,
+  requireRole(["owner", "admin", "member"]),
+  async (c) => {
+    const body = (await c.req.json().catch(() => null)) as null | {
+      integration_id?: number;
+      source_doc_token?: string;
+      title?: string;
+      cover_asset_id?: number | null;
+      cover_url?: string | null;
+      content_md?: string;
+      content_md_final?: string;
+      status?: string;
+    };
 
-  if (!body?.workspaceId) return c.json({ message: "workspaceId is required" }, 400);
-  if (!body?.integrationId) return c.json({ message: "integrationId is required" }, 400);
-  if (!body?.sourceDocToken) return c.json({ message: "sourceDocToken is required" }, 400);
-  if (!body?.title) return c.json({ message: "title is required" }, 400);
+    if (!body?.integration_id) return fail(c, 400, "integration_id is required");
+    if (!body?.source_doc_token) return fail(c, 400, "source_doc_token is required");
+    if (!body?.title) return fail(c, 400, "title is required");
 
-  const inserted = await db
-    .insert(articles)
-    .values({
-      workspaceId: body.workspaceId,
-      integrationId: body.integrationId,
-      sourceDocToken: body.sourceDocToken,
-      title: body.title,
-      coverAssetId: body.coverAssetId ?? null,
-      coverUrl: body.coverUrl ?? null,
-      contentMd: body.contentMd ?? "",
-      contentMdFinal: body.contentMdFinal ?? "",
-      status: body.status ?? "draft",
-    })
-    .returning();
+    const ctxWorkspaceId = c.get("workspaceId") as number | undefined;
+    if (!ctxWorkspaceId) return fail(c, 400, "workspaceId is required");
 
-  return c.json({ data: inserted[0] }, 201);
-});
+    const [integration] = await db
+      .select({ id: integrations.id })
+      .from(integrations)
+      .where(and(eq(integrations.id, body.integration_id), eq(integrations.workspaceId, ctxWorkspaceId)))
+      .limit(1);
+    if (!integration) return fail(c, 404, "integration not found");
 
-articleRoutes.patch("/articles/:id", async (c) => {
-  const id = Number(c.req.param("id"));
-  if (!Number.isFinite(id)) return c.json({ message: "invalid id" }, 400);
+    const inserted = await db
+      .insert(articles)
+      .values({
+        workspaceId: ctxWorkspaceId,
+        integrationId: body.integration_id,
+        sourceDocToken: body.source_doc_token,
+        title: body.title,
+        coverAssetId: body.cover_asset_id ?? null,
+        coverUrl: body.cover_url ?? null,
+        contentMd: body.content_md ?? "",
+        contentMdFinal: body.content_md_final ?? "",
+        status: body.status ?? "draft",
+      })
+      .returning();
 
-  const body = (await c.req.json().catch(() => null)) as null | {
-    title?: string;
-    coverAssetId?: number | null;
-    coverUrl?: string | null;
-    contentMd?: string;
-    contentMdFinal?: string;
-    status?: string;
-  };
-  if (!body) return c.json({ message: "invalid json" }, 400);
+    return ok(c, inserted[0], 201);
+  },
+);
 
-  const patch: Record<string, unknown> = {};
-  if (body.title !== undefined) patch.title = body.title;
-  if (body.coverAssetId !== undefined) patch.coverAssetId = body.coverAssetId;
-  if (body.coverUrl !== undefined) patch.coverUrl = body.coverUrl;
-  if (body.contentMd !== undefined) patch.contentMd = body.contentMd;
-  if (body.contentMdFinal !== undefined) patch.contentMdFinal = body.contentMdFinal;
-  if (body.status !== undefined) patch.status = body.status;
+articleRoutes.patch(
+  "/articles/:id",
+  requireUser,
+  requireWorkspace,
+  requireWorkspaceMember,
+  requireRole(["owner", "admin", "member"]),
+  async (c) => {
+    const ctxWorkspaceId = c.get("workspaceId") as number | undefined;
+    if (!ctxWorkspaceId) return fail(c, 400, "workspaceId is required");
 
-  const updated = await db.update(articles).set(patch).where(eq(articles.id, id)).returning();
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) return fail(c, 400, "invalid id");
 
-  if (updated.length === 0) return c.json({ message: "not found" }, 404);
-  return c.json({ data: updated[0] });
-});
+    const body = (await c.req.json().catch(() => null)) as null | {
+      title?: string;
+      cover_asset_id?: number | null;
+      cover_url?: string | null;
+      content_md?: string;
+      content_md_final?: string;
+      status?: string;
+    };
+    if (!body) return fail(c, 400, "invalid json");
+
+    const patch: Record<string, unknown> = {};
+    if (body.title !== undefined) patch.title = body.title;
+    if (body.cover_asset_id !== undefined) patch.coverAssetId = body.cover_asset_id;
+    if (body.cover_url !== undefined) patch.coverUrl = body.cover_url;
+    if (body.content_md !== undefined) patch.contentMd = body.content_md;
+    if (body.content_md_final !== undefined) patch.contentMdFinal = body.content_md_final;
+    if (body.status !== undefined) patch.status = body.status;
+
+    const updated = await db
+      .update(articles)
+      .set(patch)
+      .where(and(eq(articles.id, id), eq(articles.workspaceId, ctxWorkspaceId)))
+      .returning();
+
+    if (updated.length === 0) return fail(c, 404, "not found");
+    return ok(c, updated[0]);
+  },
+);
 
 articleRoutes.post(
   "/articles/:id/publish",
@@ -130,45 +161,40 @@ articleRoutes.post(
   async (c) => {
     const workspaceId = c.get("workspaceId") as number;
     const articleId = Number(c.req.param("id"));
-    if (!Number.isFinite(articleId)) return c.json({ message: "invalid id" }, 400);
+    if (!Number.isFinite(articleId)) return fail(c, 400, "invalid id");
 
     const body = (await c.req.json().catch(() => null)) as null | {
-      integrationId?: number;
-      platformType?: number;
+      integrations_id?: number;
     };
-    if (!body) return c.json({ message: "invalid json" }, 400);
-    if (!Number.isFinite(body.integrationId)) return c.json({ message: "integrationId is required" }, 400);
-    if (!Number.isFinite(body.platformType)) return c.json({ message: "platformType is required" }, 400);
+    if (!body) return fail(c, 400, "invalid json");
+    if (!Number.isFinite(body.integrations_id)) return fail(c, 400, "integrations_id is required");
 
     const [article] = await db
       .select({ id: articles.id })
       .from(articles)
       .where(and(eq(articles.id, articleId), eq(articles.workspaceId, workspaceId)))
       .limit(1);
-    if (!article) return c.json({ message: "not found" }, 404);
+    if (!article) return fail(c, 404, "not found");
 
     const [integration] = await db
       .select({ id: integrations.id })
       .from(integrations)
-      .where(and(eq(integrations.id, body.integrationId as number), eq(integrations.workspaceId, workspaceId)))
+      .where(and(eq(integrations.id, body.integrations_id as number), eq(integrations.workspaceId, workspaceId)))
       .limit(1);
-    if (!integration) return c.json({ message: "integration not found" }, 404);
+    if (!integration) return fail(c, 404, "integration not found");
 
     const publicationRows = await db
-      .insert(articlePublications)
+      // schema.ts is generated by pull; during dev we may change SQL first.
+      // deno-lint-ignore no-explicit-any
+      .insert(articlePublications as any)
       .values({
-        workspaceId,
         articleId,
-        integrationId: body.integrationId as number,
-        platformType: body.platformType as number,
+        integrationId: body.integrations_id as number,
         status: "publishing",
       })
       .onConflictDoUpdate({
-        target: [
-          articlePublications.articleId,
-          articlePublications.integrationId,
-          articlePublications.platformType,
-        ],
+        // deno-lint-ignore no-explicit-any
+        target: [(articlePublications as any).articleId, (articlePublications as any).integrationId],
         set: {
           status: "publishing",
           updatedAt: sql`now()`,
@@ -176,22 +202,31 @@ articleRoutes.post(
       })
       .returning({ id: articlePublications.id, status: articlePublications.status });
 
+    const integrationId = body.integrations_id as number;
+    const jobKey = `${integrationId}:${articleId}`;
+    const [existingJob] = await db
+      .select({ id: jobs.id, queue: jobs.queue, scheduledAt: jobs.scheduledAt })
+      .from(jobs)
+      .where(and(eq(jobs.workspaceId, workspaceId), eq(jobs.queue, JobQueue.PublishArticle), eq(jobs.jobKey, jobKey)))
+      .limit(1);
+    if (existingJob) return fail(c, 409, "duplicate job", 409, { existing: existingJob });
+
     const jobRows = await db
       .insert(jobs)
       .values({
         workspaceId,
-        queue: "publish_article",
+        jobKey,
+        queue: JobQueue.PublishArticle,
         payload: {
-          type: "publish_article",
+          type: JobQueue.PublishArticle,
           workspaceId,
           articleId,
-          integrationId: body.integrationId as number,
-          platformType: body.platformType as number,
+          integrationId,
         },
       })
       .returning({ id: jobs.id, queue: jobs.queue, scheduledAt: jobs.scheduledAt });
 
-    return c.json({ data: { publication: publicationRows[0], job: jobRows[0] } }, 201);
+    return ok(c, { publication: publicationRows[0], job: jobRows[0] }, 201);
   },
 );
 
@@ -203,20 +238,20 @@ articleRoutes.get(
   async (c) => {
     const workspaceId = c.get("workspaceId") as number;
     const articleId = Number(c.req.param("id"));
-    if (!Number.isFinite(articleId)) return c.json({ message: "invalid id" }, 400);
+    if (!Number.isFinite(articleId)) return fail(c, 400, "invalid id");
 
     const [article] = await db
       .select({ id: articles.id })
       .from(articles)
       .where(and(eq(articles.id, articleId), eq(articles.workspaceId, workspaceId)))
       .limit(1);
-    if (!article) return c.json({ message: "not found" }, 404);
+    if (!article) return fail(c, 404, "not found");
 
     const data = await db
       .select()
       .from(articlePublications)
-      .where(and(eq(articlePublications.workspaceId, workspaceId), eq(articlePublications.articleId, articleId)));
+      .where(eq(articlePublications.articleId, articleId));
 
-    return c.json({ data });
+    return ok(c, data);
   },
 );

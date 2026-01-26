@@ -21,7 +21,7 @@ const load = async () => {
   loading.value = true
   try {
     const res = await listMembers()
-    members.value = res.data
+    members.value = res
   } finally {
     loading.value = false
   }
@@ -38,10 +38,10 @@ const invite = async () => {
     const res = await createInvitation({
       email: inviteEmail.value.trim(),
       role: inviteRole.value,
-      expiresInDays: inviteDays.value,
+      expires_in_days: inviteDays.value,
     })
-    lastInviteToken.value = res.data.token
-    lastInviteExpiresAt.value = res.data.expiresAt
+    lastInviteToken.value = res.token
+    lastInviteExpiresAt.value = res.expiresAt
     message.success('invitation created')
   } finally {
     saving.value = false

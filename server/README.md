@@ -31,44 +31,6 @@ deno install npm:drizzle-orm npm:drizzle-kit npm:pg npm:@types/pg
 ```
 deno -A --node-modules-dir npm:drizzle-kit generate --custom --name=init
 ```
-### 执行migration
-```
-deno -A --node-modules-dir npm:drizzle-kit migrate
-```
-
-### 使用pull更新schema
-```
-deno -A --node-modules-dir npm:drizzle-kit pull
-```
-
-
-
-### 官方推荐流程（难以理解）
-
-先定义schema.ts
-
-### 直接覆盖数据库
-```
-deno -A --node-modules-dir npm:drizzle-kit push
-```
-
-### 从数据库同步到schema
-```
-deno -A --node-modules-dir npm:drizzle-kit pull
-```
-
-### 通过migration写入数据库
-通过drizzle-kit生成migration
-```
-<!-- deno task db:generate -->
-deno -A --node-modules-dir npm:drizzle-kit generate
-```
-
-### 执行migration
-```
-deno -A --node-modules-dir npm:drizzle-kit migrate
-```
-
 
 ## 实现方案
 

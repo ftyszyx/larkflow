@@ -1,5 +1,4 @@
 import request from '@/utils/request'
-import type { ApiObjectResponse } from '@/types/api'
 import { useAuthStore } from '@/stores/auth'
 
 const base = () => {
@@ -14,6 +13,6 @@ export type CreateInvitationResponse = {
   expiresAt: string
 }
 
-export const createInvitation = async (payload: { email: string; role: string; expiresInDays?: number }) => {
-  return (await request.post(`${base()}/invitations`, payload)) as ApiObjectResponse<CreateInvitationResponse>
+export const createInvitation = async (payload: { email: string; role: string; expires_in_days?: number }) => {
+  return (await request.post(`${base()}/invitations`, payload)) as CreateInvitationResponse
 }

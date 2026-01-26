@@ -1,6 +1,6 @@
 import request from '@/utils/request'
-import type { ApiListResponse, Workspace } from '@/types/api'
+import type { Workspace } from '@/types/api'
 
 export const getWorkspaces = async () => {
-  return (await request.get('/workspaces')) as ApiListResponse<Workspace>
+  return (await request.get('/workspaces')) as Workspace[]
 }

@@ -8,6 +8,7 @@ import type { AuthedUser } from "../middleware/auth.ts";
 import { requireRole, requireWorkspace, requireWorkspaceMember } from "../middleware/workspace.ts";
 import type { WorkspaceRole } from "../middleware/workspace.ts";
 import type { AppEnv } from "../types.ts";
+import { fail, ok } from "../utils/response.ts";
 
 export const workspaceRoutes = new Hono<AppEnv>();
 
@@ -28,13 +29,13 @@ workspaceRoutes.get("/workspaces", requireUser, async (c) => {
     .where(eq(workspaceMembers.userId, user.id))
     .orderBy(desc(workspaces.updatedAt));
 
-  return c.json({ data });
+  return ok(c, data);
 });
 
 workspaceRoutes.post("/workspaces", requireUser, async (c) => {
   const user = c.get("user") as AuthedUser;
   const body = (await c.req.json().catch(() => null)) as null | { name?: string };
-  if (!body?.name) return c.json({ message: "name is required" }, 400);
+  if (!body?.name) return fail(c, 400, "name is required");
 
   const created = await db
     .insert(workspaces)
@@ -44,7 +45,7 @@ workspaceRoutes.post("/workspaces", requireUser, async (c) => {
 
   await db.insert(workspaceMembers).values({ workspaceId: workspace.id, userId: user.id, role: "owner" });
 
-  return c.json({ data: workspace }, 201);
+  return ok(c, workspace, 201);
 });
 
 workspaceScopedRoutes.get(
@@ -68,7 +69,7 @@ workspaceScopedRoutes.get(
       .innerJoin(users, eq(workspaceMembers.userId, users.id))
       .where(eq(workspaceMembers.workspaceId, ctxWorkspaceId));
 
-    return c.json({ data });
+    return ok(c, data);
   },
 );
 
@@ -82,8 +83,8 @@ workspaceScopedRoutes.post(
     const ctxWorkspaceId = c.get("workspaceId") as number;
 
     const body = (await c.req.json().catch(() => null)) as null | { email?: string; name?: string | null; role?: WorkspaceRole };
-    if (!body?.email) return c.json({ message: "email is required" }, 400);
-    if (!body?.role) return c.json({ message: "role is required" }, 400);
+    if (!body?.email) return fail(c, 400, "email is required");
+    if (!body?.role) return fail(c, 400, "role is required");
 
     const newUser = await db
       .insert(users)
@@ -109,7 +110,7 @@ workspaceScopedRoutes.post(
       })
       .returning();
 
-    return c.json({ data: inserted[0] }, 201);
+    return ok(c, inserted[0], 201);
   },
 );
 
@@ -123,10 +124,10 @@ workspaceScopedRoutes.patch(
     const ctxWorkspaceId = c.get("workspaceId") as number;
 
     const targetUserId = Number(c.req.param("userId"));
-    if (!Number.isFinite(targetUserId)) return c.json({ message: "invalid userId" }, 400);
+    if (!Number.isFinite(targetUserId)) return fail(c, 400, "invalid userId");
 
     const body = (await c.req.json().catch(() => null)) as null | { role?: WorkspaceRole };
-    if (!body?.role) return c.json({ message: "role is required" }, 400);
+    if (!body?.role) return fail(c, 400, "role is required");
 
     const updated = await db
       .update(workspaceMembers)
@@ -134,7 +135,7 @@ workspaceScopedRoutes.patch(
       .where(and(eq(workspaceMembers.workspaceId, ctxWorkspaceId), eq(workspaceMembers.userId, targetUserId)))
       .returning();
 
-    if (updated.length === 0) return c.json({ message: "not found" }, 404);
-    return c.json({ data: updated[0] });
+    if (updated.length === 0) return fail(c, 404, "not found");
+    return ok(c, updated[0]);
   },
 );

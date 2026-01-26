@@ -18,7 +18,7 @@ const load = async () => {
   loading.value = true
   try {
     const res = await platformListWorkspaces()
-    items.value = res.data
+    items.value = res
   } finally {
     loading.value = false
   }
@@ -35,7 +35,7 @@ const create = async () => {
     const res = await platformCreateWorkspace(createName.value.trim())
     message.success('workspace created')
     createName.value = ''
-    items.value = [res.data, ...items.value]
+    items.value = [res, ...items.value]
   } finally {
     creating.value = false
   }

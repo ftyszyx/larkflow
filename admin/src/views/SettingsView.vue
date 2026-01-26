@@ -13,7 +13,7 @@ const loadWorkspaces = async () => {
   loading.value = true
   try {
     const res = await getWorkspaces()
-    workspaces.value = res.data
+    workspaces.value = res
   } finally {
     loading.value = false
   }
@@ -22,7 +22,7 @@ const loadWorkspaces = async () => {
 
 <template>
   <a-space direction="vertical" style="width: 100%" :size="16">
-    <div style="font-size: 18px; font-weight: 600">Settings</div>
+    <div style="font-size: 18px; font-weight: 600">Settings / Request</div>
 
     <a-form layout="vertical">
       <a-form-item label="X-Api-Key (optional)">

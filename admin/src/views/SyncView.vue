@@ -19,7 +19,7 @@ const loadIntegrations = async () => {
   integrationsLoading.value = true
   try {
     const res = await getIntegrations()
-    integrations.value = res.data
+    integrations.value = res
   } finally {
     integrationsLoading.value = false
   }
@@ -42,7 +42,7 @@ const refreshStatus = async () => {
   loading.value = true
   try {
     const res = await getSyncStatus(integrationId.value as number, docToken.value.trim())
-    sync.value = res.data
+    sync.value = res
   } finally {
     loading.value = false
   }
@@ -53,7 +53,7 @@ const reset = async () => {
   loading.value = true
   try {
     const res = await resetSyncStatus(integrationId.value as number, docToken.value.trim())
-    sync.value = res.data
+    sync.value = res
     message.success('reset done')
   } finally {
     loading.value = false

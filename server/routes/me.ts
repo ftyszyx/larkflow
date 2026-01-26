@@ -1,11 +1,11 @@
 import { Hono } from "hono";
-import { requireUser } from "../middleware/auth.ts";
-import type { AuthedUser } from "../middleware/auth.ts";
+import { requireUser, type AuthedUser } from "../middleware/auth.ts";
 import type { AppEnv } from "../types.ts";
+import { ok } from "../utils/response.ts";
 
 export const meRoutes = new Hono<AppEnv>();
 
 meRoutes.get("/me", requireUser, (c) => {
   const user = c.get("user") as AuthedUser;
-  return c.json({ data: user });
+  return ok(c, user);
 });

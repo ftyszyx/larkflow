@@ -9,6 +9,11 @@ const auth = useAuthStore()
 
 const selectedKeys = computed(() => [route.path])
 
+const openKeys = computed(() => {
+  if (route.path.startsWith('/settings')) return ['settings']
+  return []
+})
+
 const showPlatform = computed(() => !!auth.user?.isPlatformAdmin)
 
 const displayName = computed(() => {
@@ -38,12 +43,17 @@ const onUserMenuClick = (info: any) => {
   <a-layout style="min-height: 100vh">
     <a-layout-sider collapsible>
       <div style="height: 32px; margin: 16px; color: #fff; font-weight: 600">larkflow</div>
-      <a-menu theme="dark" mode="inline" :selectedKeys="selectedKeys" @click="onMenuClick">
+      <a-menu theme="dark" mode="inline" :selectedKeys="selectedKeys" :openKeys="openKeys" @click="onMenuClick">
         <a-menu-item v-if="showPlatform" key="/platform/workspaces">Platform</a-menu-item>
         <a-menu-item key="/members">Members</a-menu-item>
         <a-menu-item key="/integrations">Integrations</a-menu-item>
         <a-menu-item key="/sync">Sync</a-menu-item>
+        <a-menu-item key="/jobs">Jobs</a-menu-item>
         <a-menu-item key="/articles">Articles</a-menu-item>
+        <a-sub-menu key="settings" title="Settings">
+          <a-menu-item key="/settings/oss">OSS</a-menu-item>
+          <a-menu-item v-if="showPlatform" key="/settings/worker">Worker</a-menu-item>
+        </a-sub-menu>
       </a-menu>
     </a-layout-sider>
 

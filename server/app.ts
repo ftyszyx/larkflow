@@ -1,19 +1,17 @@
 import { Hono } from "hono";
 import { sql } from "drizzle-orm";
 import { db } from "./db.ts";
-import { requireApiKey } from "./middleware/auth.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { invitationRoutes, invitationScopedRoutes } from "./routes/invitations.ts";
 import { platformRoutes } from "./routes/platform.ts";
 import { workspaceRoutes, workspaceScopedRoutes } from "./routes/workspaces.ts";
 import { articleRoutes } from "./routes/articles.ts";
 import { integrationRoutes } from "./routes/integrations.ts";
+import { jobRoutes } from "./routes/jobs.ts";
+import { settingsRoutes } from "./routes/settings.ts";
 import type { AppEnv } from "./types.ts";
 
 export const app = new Hono<AppEnv>();
-
-// Optional system-level gate (e.g. internal deployment). For product mode, leave API_KEY empty.
-app.use("/api/*", requireApiKey);
 
 app.get("/", (c) => c.text("Hello Hono!"));
 
@@ -29,7 +27,15 @@ app.route("/api", platformRoutes);
 app.route("/api", workspaceRoutes);
 
 // Workspace-scoped APIs (strong switch)
+//工作区相关
 app.route("/api/w/:workspaceId", workspaceScopedRoutes);
+//邀请相关
 app.route("/api/w/:workspaceId", invitationScopedRoutes);
+//平台信息
 app.route("/api/w/:workspaceId", integrationRoutes);
+//文章相关
 app.route("/api/w/:workspaceId", articleRoutes);
+//任务相关
+app.route("/api/w/:workspaceId", jobRoutes);
+//设置相关
+app.route("/api/w/:workspaceId", settingsRoutes);

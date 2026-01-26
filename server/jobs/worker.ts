@@ -1,35 +1,63 @@
 import { sql } from "drizzle-orm";
 import { db } from "../db.ts";
 import { jobs } from "../drizzle/schema.ts";
+import { systemSettings } from "../drizzle/schema.ts";
+import { JobQueue } from "../constants/jobs.ts";
 import { handleSyncFeishuSpace } from "./handlers/sync_feishu_space.ts";
 import { handlePublishArticle } from "./handlers/publish_article.ts";
 
 type JobRow = {
   id: number;
-  queue: string;
+  queue: JobQueue;
   payload: Record<string, unknown>;
   attempts: number;
   max_attempts: number;
 };
 
-const getEnvInt = (name: string, fallback: number) => {
-  const raw = Deno.env.get(name);
-  if (!raw) return fallback;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : fallback;
+type WorkerRuntimeConfig = {
+  workerId: string;
+  concurrency: number;
+  pollMs: number;
+  lockSeconds: number;
 };
 
-const WORKER_ID = Deno.env.get("WORKER_ID") ?? `worker-${crypto.randomUUID()}`;
-const POLL_MS = getEnvInt("WORKER_POLL_MS", 1000);
-const LOCK_SECONDS = getEnvInt("WORKER_LOCK_SECONDS", 30);
+const WORKER_SETTINGS_KEY = "worker";
+
+const getInt = (value: unknown, fallback: number) => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return fallback;
+};
+
+const loadWorkerRuntimeConfig = async (): Promise<WorkerRuntimeConfig> => {
+  const workerId = Deno.env.get("WORKER_ID") ?? `worker-${crypto.randomUUID()}`;
+
+  const [row] = await db
+    .select({ value: systemSettings.value })
+    .from(systemSettings)
+    .where(sql`${systemSettings.key} = ${WORKER_SETTINGS_KEY}`)
+    .limit(1);
+
+  const value = row?.value;
+  const obj = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+
+  const concurrency = Math.max(1, getInt(obj.concurrency, 1));
+  const pollMs = Math.max(50, getInt(obj.pollMs, 1000));
+  const lockSeconds = Math.max(1, getInt(obj.lockSeconds, 30));
+
+  return { workerId, concurrency, pollMs, lockSeconds };
+};
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const claimNextJob = async (): Promise<JobRow | null> => {
+const claimNextJob = async (workerId: string, lockSeconds: number): Promise<JobRow | null> => {
   const res = await db.execute<JobRow>(sql`
     update jobs
-    set locked_by = ${WORKER_ID},
-        locked_until = now() + (${LOCK_SECONDS} || ' seconds')::interval,
+    set locked_by = ${workerId},
+        locked_until = now() + (${lockSeconds} || ' seconds')::interval,
         updated_at = now()
     where id = (
       select id
@@ -67,12 +95,12 @@ const markJobFailed = async (jobId: number, attempts: number) => {
 const dispatchJob = async (job: JobRow) => {
   const payload = job.payload;
 
-  if (job.queue === "sync_feishu_space" || payload.type === "sync_feishu_space") {
+  if (job.queue === JobQueue.SyncFeishuSpace || payload.type === JobQueue.SyncFeishuSpace) {
     await handleSyncFeishuSpace(payload as unknown as Parameters<typeof handleSyncFeishuSpace>[0]);
     return;
   }
 
-  if (job.queue === "publish_article" || payload.type === "publish_article") {
+  if (job.queue === JobQueue.PublishArticle || payload.type === JobQueue.PublishArticle) {
     await handlePublishArticle(payload as unknown as Parameters<typeof handlePublishArticle>[0]);
     return;
   }
@@ -80,12 +108,12 @@ const dispatchJob = async (job: JobRow) => {
   throw new Error(`unknown job queue: ${job.queue}`);
 };
 
-export const runWorker = async () => {
+const runWorkerLoop = async (workerId: string, pollMs: number, lockSeconds: number) => {
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const job = await claimNextJob();
+    const job = await claimNextJob(workerId, lockSeconds);
     if (!job) {
-      await sleep(POLL_MS);
+      await sleep(pollMs);
       continue;
     }
 
@@ -96,6 +124,15 @@ export const runWorker = async () => {
       await markJobFailed(job.id, job.attempts);
     }
   }
+};
+
+export const runWorker = async () => {
+  const cfg = await loadWorkerRuntimeConfig();
+  const loops = Array.from({ length: cfg.concurrency }, (_, i) => {
+    const suffix = cfg.concurrency === 1 ? "" : `-${i + 1}`;
+    return runWorkerLoop(`${cfg.workerId}${suffix}`, cfg.pollMs, cfg.lockSeconds);
+  });
+  await Promise.all(loops);
 };
 
 if (import.meta.main) {

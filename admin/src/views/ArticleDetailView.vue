@@ -14,7 +14,6 @@ const article = ref<Article | null>(null)
 
 const integrations = ref<Integration[]>([])
 const publishIntegrationId = ref<number | null>(null)
-const platformType = ref<number>(1)
 
 const pubs = ref<ArticlePublication[]>([])
 const pubsLoading = ref(false)
@@ -25,7 +24,7 @@ const load = async () => {
   loading.value = true
   try {
     const res = await getArticle(id)
-    article.value = res.data
+    article.value = res
   } finally {
     loading.value = false
   }
@@ -33,14 +32,14 @@ const load = async () => {
 
 const loadIntegrations = async () => {
   const res = await getIntegrations()
-  integrations.value = res.data
+  integrations.value = res
 }
 
 const loadPubs = async () => {
   pubsLoading.value = true
   try {
     const res = await listPublications(id)
-    pubs.value = res.data
+    pubs.value = res
   } finally {
     pubsLoading.value = false
   }
@@ -48,7 +47,7 @@ const loadPubs = async () => {
 
 const doPublish = async () => {
   if (!canPublish.value) return
-  await publishArticle(id, publishIntegrationId.value as number, platformType.value)
+  await publishArticle(id, publishIntegrationId.value as number)
   message.success('publish job created')
   await loadPubs()
 }
@@ -81,9 +80,6 @@ onMounted(async () => {
             </a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item label="PlatformType">
-          <a-input-number v-model:value="platformType" :min="1" />
-        </a-form-item>
         <a-form-item>
           <a-button type="primary" :disabled="!canPublish" @click="doPublish">Publish</a-button>
         </a-form-item>
@@ -93,7 +89,6 @@ onMounted(async () => {
       </a-form>
 
       <a-table :dataSource="pubs" :loading="pubsLoading" rowKey="id" size="small" :pagination="false" style="margin-top: 12px">
-        <a-table-column title="Platform" dataIndex="platformType" />
         <a-table-column title="Integration" dataIndex="integrationId" />
         <a-table-column title="Status" dataIndex="status" />
         <a-table-column title="Updated" dataIndex="updatedAt" />

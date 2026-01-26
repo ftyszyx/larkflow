@@ -1,5 +1,4 @@
 import request from '@/utils/request'
-import type { ApiListResponse, ApiObjectResponse } from '@/types/api'
 import { useAuthStore } from '@/stores/auth'
 
 const base = () => {
@@ -18,9 +17,9 @@ export type WorkspaceMember = {
 }
 
 export const listMembers = async () => {
-  return (await request.get(`${base()}/members`)) as ApiListResponse<WorkspaceMember>
+  return (await request.get(`${base()}/members`)) as WorkspaceMember[]
 }
 
 export const updateMemberRole = async (userId: number, role: string) => {
-  return (await request.patch(`${base()}/members/${userId}`, { role })) as ApiObjectResponse<any>
+  return (await request.patch(`${base()}/members/${userId}`, { role })) as any
 }

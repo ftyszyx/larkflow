@@ -17,8 +17,8 @@ const load = async () => {
   loading.value = true
   try {
     const res = await me()
-    auth.user = res.data.user
-    auth.workspaces = res.data.workspaces
+    auth.user = res.user
+    auth.workspaces = res.workspaces
 
     const force = String(route.query.force ?? '') === '1'
     if (!force && auth.workspaces.length === 1) {

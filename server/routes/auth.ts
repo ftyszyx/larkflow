@@ -6,13 +6,14 @@ import type { AppEnv } from "../types.ts";
 import { signUserJwt } from "../utils/jwt.ts";
 import { verifyPassword } from "../utils/password.ts";
 import { requireUser } from "../middleware/auth.ts";
+import { fail, ok } from "../utils/response.ts";
 
 export const authRoutes = new Hono<AppEnv>();
 
 authRoutes.post("/auth/login", async (c) => {
   const body = (await c.req.json().catch(() => null)) as null | { email?: string; password?: string };
-  if (!body?.email) return c.json({ message: "email is required" }, 400);
-  if (!body?.password) return c.json({ message: "password is required" }, 400);
+  if (!body?.email) return fail(c, 400, "email is required");
+  if (!body?.password) return fail(c, 400, "password is required");
 
   const email = body.email.trim().toLowerCase();
   const [u] = await db
@@ -21,13 +22,13 @@ authRoutes.post("/auth/login", async (c) => {
     .where(eq(users.email, email))
     .limit(1);
 
-  if (!u?.passwordHash) return c.json({ message: "invalid credentials" }, 401);
+  if (!u?.passwordHash) return fail(c, 401, "invalid credentials");
 
-  const ok = await verifyPassword(body.password, u.passwordHash);
-  if (!ok) return c.json({ message: "invalid credentials" }, 401);
+  const passwordOk = await verifyPassword(body.password, u.passwordHash);
+  if (!passwordOk) return fail(c, 401, "invalid credentials");
 
   const token = await signUserJwt({ uid: u.id, email: u.email, isPlatformAdmin: !!u.isPlatformAdmin });
-  return c.json({ data: { token } });
+  return ok(c, { token });
 });
 
 authRoutes.get("/auth/me", requireUser, async (c) => {
@@ -46,5 +47,5 @@ authRoutes.get("/auth/me", requireUser, async (c) => {
     .where(eq(workspaceMembers.userId, user.id))
     .orderBy(sql`workspaces.updated_at desc`);
 
-  return c.json({ data: { user, workspaces: memberships } });
+  return ok(c, { user, workspaces: memberships });
 });

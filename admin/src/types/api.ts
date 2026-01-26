@@ -20,10 +20,23 @@ export type Integration = {
   id: number
   workspaceId: number
   platformType: number
-  feishuWorkspaceId?: string | null
   name: string
   status: string
   config: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export type Job = {
+  id: number
+  workspaceId?: number | null
+  queue: string
+  payload: Record<string, unknown>
+  attempts: number
+  maxAttempts: number
+  scheduledAt: string
+  lockedBy?: string | null
+  lockedUntil?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -55,10 +68,8 @@ export type Article = {
 
 export type ArticlePublication = {
   id: number
-  workspaceId: number
   articleId: number
   integrationId: number
-  platformType: number
   status: string
   remoteId?: string | null
   remoteUrl?: string | null
