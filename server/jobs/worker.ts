@@ -90,19 +90,17 @@ const claimNextJob = async (workerId: string, lockSeconds: number): Promise<JobR
 };
 
 const emitJobEvent = async (job: JobRow, event: string) => {
-  const apiKey = (Deno.env.get("API_KEY") ?? "").trim();
-  if (!apiKey) return;
   if (!job.workspaceId) return;
 
   const baseUrl = (Deno.env.get("BASE_URL") ?? "http://127.0.0.1:8000").replace(/\/$/, "");
+  const apiKey = (Deno.env.get("API_KEY") ?? "").trim();
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (apiKey) headers["X-Api-Key"] = apiKey;
 
   try {
     await fetch(`${baseUrl}/api/w/${job.workspaceId}/jobs/webhook`, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "X-Api-Key": apiKey,
-      },
+      headers,
       body: JSON.stringify({
         workspace_id: job.workspaceId,
         event,
@@ -163,15 +161,19 @@ const runWorkerLoop = async (opts: { workerId: string; getPollMs: () => number; 
       continue;
     }
 
+    console.log(`[worker] claimed job id=${job.id} queue=${job.queue} by=${opts.workerId}`);
+
     await emitJobEvent(job, "claimed");
 
     try {
       await dispatchJob(job);
       await markJobDone(job.id);
       await emitJobEvent(job, "done");
-    } catch {
+      console.log(`[worker] done job id=${job.id} queue=${job.queue}`);
+    } catch (e) {
       await markJobFailed(job.id, job.attempts);
       await emitJobEvent(job, "failed");
+      console.error(`[worker] failed job id=${job.id} queue=${job.queue}`, e);
     }
   }
 };
@@ -179,6 +181,10 @@ const runWorkerLoop = async (opts: { workerId: string; getPollMs: () => number; 
 export const runWorker = async () => {
   const baseWorkerId = Deno.env.get("WORKER_ID") ?? `worker-${crypto.randomUUID()}`;
   let cfg = await loadWorkerRuntimeConfig(baseWorkerId);
+
+  console.log(
+    `[worker] start id=${cfg.workerId} concurrency=${cfg.concurrency} pollMs=${cfg.pollMs} lockSeconds=${cfg.lockSeconds} reloadMs=${CONFIG_RELOAD_MS}`,
+  );
 
   const getPollMs = () => cfg.pollMs;
   const getLockSeconds = () => cfg.lockSeconds;
@@ -221,8 +227,13 @@ export const runWorker = async () => {
   const reloadTimer = setInterval(async () => {
     try {
       const next = await loadWorkerRuntimeConfig(baseWorkerId);
+      const changed =
+        next.concurrency !== cfg.concurrency || next.pollMs !== cfg.pollMs || next.lockSeconds !== cfg.lockSeconds || next.workerId !== cfg.workerId;
       cfg = next;
       reconcile();
+      if (changed) {
+        console.log(`[worker] reload id=${cfg.workerId} concurrency=${cfg.concurrency} pollMs=${cfg.pollMs} lockSeconds=${cfg.lockSeconds}`);
+      }
     } catch {
       // ignore reload failures
     }
