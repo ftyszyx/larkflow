@@ -6,151 +6,124 @@ import { JobQueue } from "../constants/jobs.ts";
 import type { AppEnv } from "../types.ts";
 import { requireUser } from "../middleware/auth.ts";
 import { requireRole, requireWorkspace, requireWorkspaceMember } from "../middleware/workspace.ts";
-import { fail, ok } from "../utils/response.ts";
+import { fail, ok, okList } from "../utils/response.ts";
 
 export const articleRoutes = new Hono<AppEnv>();
 
-articleRoutes.get(
-  "/articles",
-  requireUser,
-  requireWorkspace,
-  requireWorkspaceMember,
-  async (c) => {
-    const workspaceId = c.get("workspaceId") as number;
-    const status = c.req.query("status");
-    const limit = Math.min(Number(c.req.query("limit") ?? 50) || 50, 200);
-    const offset = Math.max(Number(c.req.query("offset") ?? 0) || 0, 0);
+articleRoutes.get("/articles", requireUser, requireWorkspace, requireWorkspaceMember, async (c) => {
+  const workspaceId = c.get("workspaceId") as number;
+  const status = c.req.query("status");
+  const page = Math.max(Number(c.req.query("page") ?? 1) || 1, 1);
+  const pageSize = Math.min(Math.max(Number(c.req.query("page_size") ?? 50) || 50, 1), 200);
+  const offset = (page - 1) * pageSize;
 
-    const where = status
-      ? and(eq(articles.workspaceId, workspaceId), eq(articles.status, status))
-      : eq(articles.workspaceId, workspaceId);
+  const where = status ? and(eq(articles.workspaceId, workspaceId), eq(articles.status, status)) : eq(articles.workspaceId, workspaceId);
 
-    const data = await db
-      .select()
-      .from(articles)
-      .where(where)
-      .orderBy(desc(articles.updatedAt))
-      .limit(limit)
-      .offset(offset);
+  const [countRow] = await db
+    .select({ total: sql<number>`count(*)` })
+    .from(articles)
+    .where(where);
+  const total = Number(countRow?.total ?? 0);
 
-    return ok(c, { items: data, limit, offset });
-  },
-);
+  const data = await db.select().from(articles).where(where).orderBy(desc(articles.updatedAt)).limit(pageSize).offset(offset);
 
-articleRoutes.get(
-  "/articles/:id",
-  requireUser,
-  requireWorkspace,
-  requireWorkspaceMember,
-  async (c) => {
-    const workspaceId = c.get("workspaceId") as number;
-    const id = Number(c.req.param("id"));
-    if (!Number.isFinite(id)) return fail(c, 400, "invalid id");
+  return okList(c, data, total);
+});
 
-    const row = await db
-      .select()
-      .from(articles)
-      .where(and(eq(articles.id, id), eq(articles.workspaceId, workspaceId)))
-      .limit(1);
-    const article = row[0];
-    if (!article) return fail(c, 404, "not found");
+articleRoutes.get("/articles/:id", requireUser, requireWorkspace, requireWorkspaceMember, async (c) => {
+  const workspaceId = c.get("workspaceId") as number;
+  const id = Number(c.req.param("id"));
+  if (!Number.isFinite(id)) return fail(c, 400, "invalid id");
 
-    return ok(c, article);
-  },
-);
+  const row = await db
+    .select()
+    .from(articles)
+    .where(and(eq(articles.id, id), eq(articles.workspaceId, workspaceId)))
+    .limit(1);
+  const article = row[0];
+  if (!article) return fail(c, 404, "not found");
 
-articleRoutes.post(
-  "/articles",
-  requireUser,
-  requireWorkspace,
-  requireWorkspaceMember,
-  requireRole(["owner", "admin", "member"]),
-  async (c) => {
-    const body = (await c.req.json().catch(() => null)) as null | {
-      integration_id?: number;
-      source_doc_token?: string;
-      title?: string;
-      cover_asset_id?: number | null;
-      cover_url?: string | null;
-      content_md?: string;
-      content_md_final?: string;
-      status?: string;
-    };
+  return ok(c, article);
+});
 
-    if (!body?.integration_id) return fail(c, 400, "integration_id is required");
-    if (!body?.source_doc_token) return fail(c, 400, "source_doc_token is required");
-    if (!body?.title) return fail(c, 400, "title is required");
+articleRoutes.post("/articles", requireUser, requireWorkspace, requireWorkspaceMember, requireRole(["owner", "admin", "member"]), async (c) => {
+  const body = (await c.req.json().catch(() => null)) as null | {
+    integration_id?: number;
+    source_doc_token?: string;
+    title?: string;
+    cover_asset_id?: number | null;
+    cover_url?: string | null;
+    content_md?: string;
+    content_md_final?: string;
+    status?: string;
+  };
 
-    const ctxWorkspaceId = c.get("workspaceId") as number | undefined;
-    if (!ctxWorkspaceId) return fail(c, 400, "workspaceId is required");
+  if (!body?.integration_id) return fail(c, 400, "integration_id is required");
+  if (!body?.source_doc_token) return fail(c, 400, "source_doc_token is required");
+  if (!body?.title) return fail(c, 400, "title is required");
 
-    const [integration] = await db
-      .select({ id: integrations.id })
-      .from(integrations)
-      .where(and(eq(integrations.id, body.integration_id), eq(integrations.workspaceId, ctxWorkspaceId)))
-      .limit(1);
-    if (!integration) return fail(c, 404, "integration not found");
+  const ctxWorkspaceId = c.get("workspaceId") as number | undefined;
+  if (!ctxWorkspaceId) return fail(c, 400, "workspaceId is required");
 
-    const inserted = await db
-      .insert(articles)
-      .values({
-        workspaceId: ctxWorkspaceId,
-        integrationId: body.integration_id,
-        sourceDocToken: body.source_doc_token,
-        title: body.title,
-        coverAssetId: body.cover_asset_id ?? null,
-        coverUrl: body.cover_url ?? null,
-        contentMd: body.content_md ?? "",
-        contentMdFinal: body.content_md_final ?? "",
-        status: body.status ?? "draft",
-      })
-      .returning();
+  const [integration] = await db
+    .select({ id: integrations.id })
+    .from(integrations)
+    .where(and(eq(integrations.id, body.integration_id), eq(integrations.workspaceId, ctxWorkspaceId)))
+    .limit(1);
+  if (!integration) return fail(c, 404, "integration not found");
 
-    return ok(c, inserted[0], 201);
-  },
-);
+  const inserted = await db
+    .insert(articles)
+    .values({
+      workspaceId: ctxWorkspaceId,
+      integrationId: body.integration_id,
+      sourceDocToken: body.source_doc_token,
+      title: body.title,
+      coverAssetId: body.cover_asset_id ?? null,
+      coverUrl: body.cover_url ?? null,
+      contentMd: body.content_md ?? "",
+      contentMdFinal: body.content_md_final ?? "",
+      status: body.status ?? "draft",
+    })
+    .returning();
 
-articleRoutes.patch(
-  "/articles/:id",
-  requireUser,
-  requireWorkspace,
-  requireWorkspaceMember,
-  requireRole(["owner", "admin", "member"]),
-  async (c) => {
-    const ctxWorkspaceId = c.get("workspaceId") as number | undefined;
-    if (!ctxWorkspaceId) return fail(c, 400, "workspaceId is required");
+  return ok(c, inserted[0], 201);
+});
 
-    const id = Number(c.req.param("id"));
-    if (!Number.isFinite(id)) return fail(c, 400, "invalid id");
+articleRoutes.patch("/articles/:id", requireUser, requireWorkspace, requireWorkspaceMember, requireRole(["owner", "admin", "member"]), async (c) => {
+  const ctxWorkspaceId = c.get("workspaceId") as number | undefined;
+  if (!ctxWorkspaceId) return fail(c, 400, "workspaceId is required");
 
-    const body = (await c.req.json().catch(() => null)) as null | {
-      title?: string;
-      cover_asset_id?: number | null;
-      cover_url?: string | null;
-      content_md?: string;
-      content_md_final?: string;
-      status?: string;
-    };
-    if (!body) return fail(c, 400, "invalid json");
+  const id = Number(c.req.param("id"));
+  if (!Number.isFinite(id)) return fail(c, 400, "invalid id");
 
-    const patch: Record<string, unknown> = {};
-    if (body.title !== undefined) patch.title = body.title;
-    if (body.cover_asset_id !== undefined) patch.coverAssetId = body.cover_asset_id;
-    if (body.cover_url !== undefined) patch.coverUrl = body.cover_url;
-    if (body.content_md !== undefined) patch.contentMd = body.content_md;
-    if (body.content_md_final !== undefined) patch.contentMdFinal = body.content_md_final;
-    if (body.status !== undefined) patch.status = body.status;
+  const body = (await c.req.json().catch(() => null)) as null | {
+    title?: string;
+    cover_asset_id?: number | null;
+    cover_url?: string | null;
+    content_md?: string;
+    content_md_final?: string;
+    status?: string;
+  };
+  if (!body) return fail(c, 400, "invalid json");
 
-    const updated = await db
-      .update(articles)
-      .set(patch)
-      .where(and(eq(articles.id, id), eq(articles.workspaceId, ctxWorkspaceId)))
-      .returning();
+  const patch: Record<string, unknown> = {};
+  if (body.title !== undefined) patch.title = body.title;
+  if (body.cover_asset_id !== undefined) patch.coverAssetId = body.cover_asset_id;
+  if (body.cover_url !== undefined) patch.coverUrl = body.cover_url;
+  if (body.content_md !== undefined) patch.contentMd = body.content_md;
+  if (body.content_md_final !== undefined) patch.contentMdFinal = body.content_md_final;
+  if (body.status !== undefined) patch.status = body.status;
 
-    if (updated.length === 0) return fail(c, 404, "not found");
-    return ok(c, updated[0]);
-  },
-);
+  const updated = await db
+    .update(articles)
+    .set(patch)
+    .where(and(eq(articles.id, id), eq(articles.workspaceId, ctxWorkspaceId)))
+    .returning();
+
+  if (updated.length === 0) return fail(c, 404, "not found");
+  return ok(c, updated[0]);
+});
 
 articleRoutes.post(
   "/articles/:id/publish",
@@ -227,31 +200,5 @@ articleRoutes.post(
       .returning({ id: jobs.id, queue: jobs.queue, scheduledAt: jobs.scheduledAt });
 
     return ok(c, { publication: publicationRows[0], job: jobRows[0] }, 201);
-  },
-);
-
-articleRoutes.get(
-  "/articles/:id/publications",
-  requireUser,
-  requireWorkspace,
-  requireWorkspaceMember,
-  async (c) => {
-    const workspaceId = c.get("workspaceId") as number;
-    const articleId = Number(c.req.param("id"));
-    if (!Number.isFinite(articleId)) return fail(c, 400, "invalid id");
-
-    const [article] = await db
-      .select({ id: articles.id })
-      .from(articles)
-      .where(and(eq(articles.id, articleId), eq(articles.workspaceId, workspaceId)))
-      .limit(1);
-    if (!article) return fail(c, 404, "not found");
-
-    const data = await db
-      .select()
-      .from(articlePublications)
-      .where(eq(articlePublications.articleId, articleId));
-
-    return ok(c, data);
   },
 );

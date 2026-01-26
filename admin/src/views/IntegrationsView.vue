@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { createIntegration, deleteIntegration, getIntegrations, updateIntegration } from '@/apis/integrations'
 import type { Integration } from '@/types/api'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
 
 const loading = ref(false)
@@ -14,7 +14,12 @@ const editingId = ref<number | null>(null)
 const formName = ref('')
 const formPlatformType = ref<string>('feishu')
 const formStatus = ref('enable')
-const formConfigJson = ref<string>('{}')
+const formBaseUrl = ref('')
+const formAppId = ref('')
+const formAppSecret = ref('')
+const formFeishuWorkspaceId = ref('')
+
+const isFeishu = computed(() => formPlatformType.value === 'feishu')
 
 const load = async () => {
   loading.value = true
@@ -32,7 +37,10 @@ const openCreate = () => {
   formName.value = ''
   formPlatformType.value = 'feishu'
   formStatus.value = 'enable'
-  formConfigJson.value = '{}'
+  formBaseUrl.value = ''
+  formAppId.value = ''
+  formAppSecret.value = ''
+  formFeishuWorkspaceId.value = ''
   modalOpen.value = true
 }
 
@@ -42,7 +50,11 @@ const openEdit = (row: Integration) => {
   formName.value = row.name
   formPlatformType.value = String(row.platformType)
   formStatus.value = row.status
-  formConfigJson.value = JSON.stringify(row.config ?? {}, null, 2)
+  const cfg = (row.config ?? {}) as any
+  formBaseUrl.value = typeof cfg.baseUrl === 'string' ? cfg.baseUrl : ''
+  formAppId.value = typeof cfg.appId === 'string' ? cfg.appId : ''
+  formAppSecret.value = typeof cfg.appSecret === 'string' ? cfg.appSecret : ''
+  formFeishuWorkspaceId.value = typeof cfg.workspaceId === 'string' ? cfg.workspaceId : ''
   modalOpen.value = true
 }
 
@@ -52,13 +64,32 @@ const submit = async () => {
     return
   }
 
-  let config: Record<string, unknown> = {}
-  try {
-    const parsed = JSON.parse(formConfigJson.value || '{}')
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) config = parsed
-  } catch {
-    message.error('config must be valid JSON object')
+  const appId = formAppId.value.trim()
+  const appSecret = formAppSecret.value.trim()
+  if (!appId) {
+    message.error('appId is required')
     return
+  }
+  if (!appSecret) {
+    message.error('appSecret is required')
+    return
+  }
+
+  const config: Record<string, unknown> = {
+    appId,
+    appSecret,
+  }
+
+  const baseUrl = formBaseUrl.value.trim()
+  if (baseUrl) config.baseUrl = baseUrl
+
+  if (isFeishu.value) {
+    const workspaceId = formFeishuWorkspaceId.value.trim()
+    if (!workspaceId) {
+      message.error('workspaceId is required for feishu')
+      return
+    }
+    config.workspaceId = workspaceId
   }
 
   const payload: any = {
@@ -151,8 +182,20 @@ onMounted(load)
           </a-select>
         </a-form-item>
 
-        <a-form-item label="Config (JSON)">
-          <a-textarea v-model:value="formConfigJson" :rows="6" />
+        <a-form-item label="Base URL">
+          <a-input v-model:value="formBaseUrl" placeholder="Leave empty to use default" />
+        </a-form-item>
+
+        <a-form-item label="App ID" required>
+          <a-input v-model:value="formAppId" />
+        </a-form-item>
+
+        <a-form-item label="App Secret" required>
+          <a-input-password v-model:value="formAppSecret" />
+        </a-form-item>
+
+        <a-form-item v-if="isFeishu" label="Feishu Workspace ID" required>
+          <a-input v-model:value="formFeishuWorkspaceId" />
         </a-form-item>
       </a-form>
     </a-modal>

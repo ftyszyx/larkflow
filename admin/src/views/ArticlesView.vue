@@ -7,8 +7,9 @@ import { useRouter } from 'vue-router'
 const router = useRouter()
 
 const status = ref<string | undefined>(undefined)
-const limit = ref(20)
-const offset = ref(0)
+const pageSize = ref(20)
+const currentPage = ref(1)
+const total = ref(0)
 
 const loading = ref(false)
 const data = ref<Article[]>([])
@@ -16,11 +17,25 @@ const data = ref<Article[]>([])
 const load = async () => {
   loading.value = true
   try {
-    const res = await listArticles({ status: status.value, limit: limit.value, offset: offset.value })
+    const res = await listArticles({ status: status.value, page: currentPage.value, page_size: pageSize.value })
     data.value = res.items
+    total.value = res.total
   } finally {
     loading.value = false
   }
+}
+
+const onStatusChange = async () => {
+  currentPage.value = 1
+  await load()
+}
+
+const onTableChange = async (pagination: any) => {
+  const nextCurrent = Number(pagination?.current ?? 1)
+  const nextPageSize = Number(pagination?.pageSize ?? pageSize.value)
+  currentPage.value = Number.isFinite(nextCurrent) && nextCurrent > 0 ? nextCurrent : 1
+  pageSize.value = Number.isFinite(nextPageSize) && nextPageSize > 0 ? nextPageSize : pageSize.value
+  await load()
 }
 
 const onRowClick = (record: Article) => {
@@ -37,27 +52,22 @@ onMounted(load)
       <a-button @click="load" :loading="loading">Refresh</a-button>
     </a-space>
 
-    <a-form layout="inline">
-      <a-form-item label="Status">
-        <a-select allowClear style="width: 160px" v-model:value="status" placeholder="all">
-          <a-select-option value="draft">draft</a-select-option>
-          <a-select-option value="ready">ready</a-select-option>
-          <a-select-option value="published">published</a-select-option>
-          <a-select-option value="archived">archived</a-select-option>
-        </a-select>
-      </a-form-item>
-      <a-form-item label="Limit">
-        <a-input-number v-model:value="limit" :min="1" :max="200" />
-      </a-form-item>
-      <a-form-item label="Offset">
-        <a-input-number v-model:value="offset" :min="0" />
-      </a-form-item>
-      <a-form-item>
-        <a-button type="primary" @click="load" :loading="loading">Apply</a-button>
-      </a-form-item>
-    </a-form>
+    <a-space :size="12" style="width: 100%">
+      <a-select allowClear style="width: 160px" v-model:value="status" placeholder="all" @change="onStatusChange">
+        <a-select-option value="draft">draft</a-select-option>
+        <a-select-option value="ready">ready</a-select-option>
+        <a-select-option value="published">published</a-select-option>
+        <a-select-option value="archived">archived</a-select-option>
+      </a-select>
+    </a-space>
 
-    <a-table :dataSource="data" :loading="loading" rowKey="id" size="small" :pagination="false"
+    <a-table
+      :dataSource="data"
+      :loading="loading"
+      rowKey="id"
+      size="small"
+      :pagination="{ current: currentPage, pageSize, total, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }"
+      @change="onTableChange"
       :customRow="(record: unknown) => ({ onClick: () => onRowClick(record as any) })"
     >
       <a-table-column title="ID" dataIndex="id" />

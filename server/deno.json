@@ -14,8 +14,9 @@
     "pg": "npm:pg@^8.17.2"
   },
   "tasks": {
-    "start": "deno run --allow-net --allow-env --allow-read=.env --env-file=.env main.ts",
-    "test": "deno test --allow-net --allow-env --allow-read=.env --env-file=.env",
+    "start": "deno run --allow-all --env-file=.env main.ts",
+    "worker": "deno run --allow-all --env-file=.env jobs/worker.ts",
+    "test": "deno test --allow-all --env-file=.env",
     "check": "deno check",
     "db:generate": "deno -A --node-modules-dir npm:drizzle-kit generate",
     "db:pull": "deno -A --node-modules-dir npm:drizzle-kit pull",

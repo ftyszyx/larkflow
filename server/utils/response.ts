@@ -19,3 +19,8 @@ export const fail = (_c: Context, status: number, message: string, code = status
     headers.set("content-type", "application/json; charset=utf-8");
     return new Response(body, { status, headers });
 };
+
+
+export const okList = <T>(_c: Context, items: T[], total: number) => {
+    return ok(_c, { items, total });
+};

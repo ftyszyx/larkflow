@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Server: Run (Deno)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/server",
+      "runtimeExecutable": "deno",
+      "runtimeArgs": [
+        "run",
+        "--allow-all",
+        "--env-file=.env"
+      ],
+      "program": "${workspaceFolder}/server/main.ts",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    }
+  ]
+}

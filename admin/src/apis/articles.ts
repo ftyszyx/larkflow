@@ -11,11 +11,10 @@ const base = () => {
 
 export type PagedItems<T> = {
   items: T[]
-  limit: number
-  offset: number
+  total: number
 }
 
-export const listArticles = async (params: { status?: string; limit?: number; offset?: number }) => {
+export const listArticles = async (params: { status?: string; page?: number; page_size?: number }) => {
   return (await request.get(`${base()}/articles`, { params })) as PagedItems<Article>
 }
 

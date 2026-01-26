@@ -7,6 +7,8 @@ import { platformRoutes } from "./routes/platform.ts";
 import { workspaceRoutes, workspaceScopedRoutes } from "./routes/workspaces.ts";
 import { articleRoutes } from "./routes/articles.ts";
 import { integrationRoutes } from "./routes/integrations.ts";
+import { integrationSyncRoutes } from "./routes/feishu_sync.ts";
+import { articlePublicationRoutes } from "./routes/article_publications.ts";
 import { jobRoutes } from "./routes/jobs.ts";
 import { settingsRoutes } from "./routes/settings.ts";
 import type { AppEnv } from "./types.ts";
@@ -33,8 +35,12 @@ app.route("/api/w/:workspaceId", workspaceScopedRoutes);
 app.route("/api/w/:workspaceId", invitationScopedRoutes);
 //平台信息
 app.route("/api/w/:workspaceId", integrationRoutes);
+//同步相关
+app.route("/api/w/:workspaceId", integrationSyncRoutes);
 //文章相关
 app.route("/api/w/:workspaceId", articleRoutes);
+//发布记录相关
+app.route("/api/w/:workspaceId", articlePublicationRoutes);
 //任务相关
 app.route("/api/w/:workspaceId", jobRoutes);
 //设置相关

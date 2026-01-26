@@ -1,42 +1,42 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import { computed } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import { useAuthStore } from "@/stores/auth";
 
-const route = useRoute()
-const router = useRouter()
-const auth = useAuthStore()
+const route = useRoute();
+const router = useRouter();
+const auth = useAuthStore();
 
-const selectedKeys = computed(() => [route.path])
+const selectedKeys = computed(() => [route.path]);
 
 const openKeys = computed(() => {
-  if (route.path.startsWith('/settings')) return ['settings']
-  return []
-})
+  if (route.path.startsWith("/settings")) return ["settings"];
+  return [];
+});
 
-const showPlatform = computed(() => !!auth.user?.isPlatformAdmin)
+const showPlatform = computed(() => !!auth.user?.isPlatformAdmin);
 
 const displayName = computed(() => {
-  const u = auth.user
-  if (!u) return 'Unknown'
-  return u.name?.trim() || u.email
-})
+  const u = auth.user;
+  if (!u) return "Unknown";
+  return u.name?.trim() || u.email;
+});
 
-const displayRole = computed(() => (auth.user?.isPlatformAdmin ? 'Platform Admin' : 'User'))
+const displayRole = computed(() => (auth.user?.isPlatformAdmin ? "Platform Admin" : "User"));
 
 const onMenuClick = (e: any) => {
-  router.push(e.key)
-}
+  router.push(e.key);
+};
 
 const onUserMenuClick = (info: any) => {
-  const key = String(info?.key ?? '')
-  if (key === 'logout') {
-    auth.clearSession()
-    router.push('/login')
-  } else if (key === 'switch-workspace') {
-    router.push({ path: '/select-workspace', query: { force: '1' } })
+  const key = String(info?.key ?? "");
+  if (key === "logout") {
+    auth.clearSession();
+    router.push("/login");
+  } else if (key === "switch-workspace") {
+    router.push({ path: "/select-workspace", query: { force: "1" } });
   }
-}
+};
 </script>
 
 <template>
@@ -60,7 +60,7 @@ const onUserMenuClick = (info: any) => {
     <a-layout>
       <a-layout-header style="background: #fff; padding: 0 16px">
         <div style="display: flex; align-items: center; justify-content: space-between; height: 100%">
-          <div style="color: #666">Workspace: {{ auth.activeWorkspaceId || '-' }}</div>
+          <div style="color: #666">Workspace: {{ auth.activeWorkspaceId || "-" }}</div>
           <a-dropdown placement="bottomRight" :trigger="['click']">
             <span style="display: flex; align-items: center; gap: 8px; cursor: pointer">
               <a-avatar size="small">{{ displayName.slice(0, 1).toUpperCase() }}</a-avatar>

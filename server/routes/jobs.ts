@@ -1,238 +1,183 @@
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "../db.ts";
-import { articlePublications, articles, integrations, jobs } from "../drizzle/schema.ts";
-import { JobQueue } from "../constants/jobs.ts";
-import { requireUser } from "../middleware/auth.ts";
+import { jobs } from "../drizzle/schema.ts";
+import { requireApiKey, requireUser } from "../middleware/auth.ts";
 import { requireRole, requireWorkspace, requireWorkspaceMember } from "../middleware/workspace.ts";
 import type { AppEnv } from "../types.ts";
-import { fail, ok } from "../utils/response.ts";
+import { verifyUserJwt } from "../utils/jwt.ts";
+import { users } from "../drizzle/schema.ts";
+import { fail, ok, okList } from "../utils/response.ts";
+
+type SseWriter = WritableStreamDefaultWriter<Uint8Array>;
+const sseClients = new Map<number, Set<SseWriter>>();
+
+const publishJobEvent = (workspaceId: number, payload: Record<string, unknown>) => {
+  const writers = sseClients.get(workspaceId);
+  if (!writers || writers.size === 0) return;
+  const msg = `event: job\ndata: ${JSON.stringify(payload)}\n\n`;
+  const bytes = new TextEncoder().encode(msg);
+  for (const w of writers) {
+    w.write(bytes).catch(() => {
+      // ignore; cleanup happens on close
+    });
+  }
+};
+
+const requireUserFromQueryToken: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const token = (c.req.query("token") ?? "").trim();
+  if (!token) return c.json({ message: "missing token" }, 401);
+
+  let claims: { uid: number; email: string; isPlatformAdmin: boolean };
+  try {
+    claims = await verifyUserJwt(token);
+  } catch {
+    return c.json({ message: "invalid token" }, 401);
+  }
+
+  const [row] = await db
+    .select({ id: users.id, email: users.email, name: users.name, isPlatformAdmin: users.isPlatformAdmin })
+    .from(users)
+    .where(eq(users.id, claims.uid))
+    .limit(1);
+  if (!row) return c.json({ message: "unauthorized" }, 401);
+
+  c.set("user", row);
+  await next();
+};
 
 export const jobRoutes = new Hono<AppEnv>();
 
-jobRoutes.post(
-    "/jobs/sync/feishu",
-    requireUser,
-    requireWorkspace,
-    requireWorkspaceMember,
-    requireRole(["owner", "admin", "member"]),
-    async (c) => {
-        const workspaceId = c.get("workspaceId") as number;
-        const body = (await c.req.json().catch(() => null)) as null | {
-            integrations_id?: number;
-            feishu_doc_token?: string;
-        };
-        if (!body) return fail(c, 400, "invalid json");
-
-        const integrationId = Number(body.integrations_id);
-        const feishuDocToken = String(body.feishu_doc_token ?? "").trim();
-        if (!Number.isFinite(integrationId)) return fail(c, 400, "integrations_id is required");
-        if (!feishuDocToken) return fail(c, 400, "feishu_doc_token is required");
-
-        const [integration] = await db
-            .select({ id: integrations.id })
-            .from(integrations)
-            .where(and(eq(integrations.id, integrationId), eq(integrations.workspaceId, workspaceId)))
-            .limit(1);
-        if (!integration) return fail(c, 404, "integration not found");
-
-        const jobKey = `${integrationId}:${feishuDocToken}`;
-        const [existingJob] = await db
-            .select({ id: jobs.id, queue: jobs.queue, scheduledAt: jobs.scheduledAt })
-            .from(jobs)
-            .where(and(eq(jobs.workspaceId, workspaceId), eq(jobs.queue, JobQueue.SyncFeishuSpace), eq(jobs.jobKey, jobKey)))
-            .limit(1);
-        if (existingJob) return fail(c, 409, "duplicate job", 409, { existing: existingJob });
-
-        const jobRows = await db
-            .insert(jobs)
-            .values({
-                workspaceId,
-                jobKey,
-                queue: JobQueue.SyncFeishuSpace,
-                payload: {
-                    type: JobQueue.SyncFeishuSpace,
-                    workspaceId,
-                    integrationId,
-                    docToken: feishuDocToken,
-                },
-            })
-            .returning({ id: jobs.id, queue: jobs.queue, scheduledAt: jobs.scheduledAt });
-
-        return ok(c, jobRows[0], 201);
-    },
-);
-
-jobRoutes.post(
-    "/jobs/publish/article",
-    requireUser,
-    requireWorkspace,
-    requireWorkspaceMember,
-    requireRole(["owner", "admin", "member"]),
-    async (c) => {
-        const workspaceId = c.get("workspaceId") as number;
-        const body = (await c.req.json().catch(() => null)) as null | {
-            article_id?: number;
-            integrations_id?: number;
-        };
-        if (!body) return fail(c, 400, "invalid json");
-
-        const articleId = Number(body.article_id);
-        const integrationId = Number(body.integrations_id);
-        if (!Number.isFinite(articleId)) return fail(c, 400, "article_id is required");
-        if (!Number.isFinite(integrationId)) return fail(c, 400, "integrations_id is required");
-
-        const [article] = await db
-            .select({ id: articles.id })
-            .from(articles)
-            .where(and(eq(articles.id, articleId), eq(articles.workspaceId, workspaceId)))
-            .limit(1);
-        if (!article) return fail(c, 404, "article not found");
-
-        const [integration] = await db
-            .select({ id: integrations.id })
-            .from(integrations)
-            .where(and(eq(integrations.id, integrationId), eq(integrations.workspaceId, workspaceId)))
-            .limit(1);
-        if (!integration) return fail(c, 404, "integration not found");
-
-        const jobKey = `${integrationId}:${articleId}`;
-        const [existingJob] = await db
-            .select({ id: jobs.id, queue: jobs.queue, scheduledAt: jobs.scheduledAt })
-            .from(jobs)
-            .where(and(eq(jobs.workspaceId, workspaceId), eq(jobs.queue, JobQueue.PublishArticle), eq(jobs.jobKey, jobKey)))
-            .limit(1);
-        if (existingJob) return fail(c, 409, "duplicate job", 409, { existing: existingJob });
-
-        const publicationRows = await db
-            // schema.ts is generated by pull; during dev we may change SQL first.
-            // deno-lint-ignore no-explicit-any
-            .insert(articlePublications as any)
-            .values({
-                articleId,
-                integrationId,
-                status: "publishing",
-            })
-            .onConflictDoUpdate({
-                // deno-lint-ignore no-explicit-any
-                target: [(articlePublications as any).articleId, (articlePublications as any).integrationId],
-                set: {
-                    status: "publishing",
-                    updatedAt: sql`now()`,
-                },
-            })
-            .returning({ id: articlePublications.id, status: articlePublications.status });
-
-        const jobRows = await db
-            .insert(jobs)
-            .values({
-                workspaceId,
-                jobKey,
-                queue: JobQueue.PublishArticle,
-                payload: {
-                    type: JobQueue.PublishArticle,
-                    workspaceId,
-                    articleId,
-                    integrationId,
-                },
-            })
-            .returning({ id: jobs.id, queue: jobs.queue, scheduledAt: jobs.scheduledAt });
-
-        return ok(c, { publication: publicationRows[0], job: jobRows[0] }, 201);
-    },
-);
-
 jobRoutes.get(
-    "/jobs",
-    requireUser,
-    requireWorkspace,
-    requireWorkspaceMember,
-    async (c) => {
-        const workspaceId = c.get("workspaceId") as number;
+  "/jobs/stream",
+  // EventSource cannot set Authorization header; use query token.
+  requireUserFromQueryToken,
+  requireWorkspace,
+  requireWorkspaceMember,
+  (c) => {
+    const workspaceId = c.get("workspaceId") as number;
+    const { readable, writable } = new TransformStream();
+    const writer = writable.getWriter();
 
-        const queue = (c.req.query("queue") ?? "").trim();
-        const limit = Math.min(Number(c.req.query("limit") ?? 50) || 50, 200);
-        const offset = Math.max(Number(c.req.query("offset") ?? 0) || 0, 0);
+    let set = sseClients.get(workspaceId);
+    if (!set) {
+      set = new Set<SseWriter>();
+      sseClients.set(workspaceId, set);
+    }
+    set.add(writer);
 
-        const where = queue ? and(eq(jobs.workspaceId, workspaceId), eq(jobs.queue, queue)) : eq(jobs.workspaceId, workspaceId);
+    const ping = setInterval(() => {
+      writer.write(new TextEncoder().encode(`: ping\n\n`)).catch(() => {});
+    }, 20000);
 
-        const data = await db
-            .select()
-            .from(jobs)
-            .where(where)
-            .orderBy(asc(jobs.scheduledAt))
-            .limit(limit)
-            .offset(offset);
+    // initial event
+    writer.write(new TextEncoder().encode(`: connected\n\n`)).catch(() => {});
 
-        return ok(c, { items: data, limit, offset });
-    },
+    c.req.raw.signal.addEventListener(
+      "abort",
+      () => {
+        clearInterval(ping);
+        set?.delete(writer);
+        if (set && set.size === 0) sseClients.delete(workspaceId);
+        writer.close().catch(() => {});
+      },
+      { once: true },
+    );
+
+    return new Response(readable, {
+      headers: {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      },
+    });
+  },
 );
 
-jobRoutes.get(
-    "/jobs/:id",
-    requireUser,
-    requireWorkspace,
-    requireWorkspaceMember,
-    async (c) => {
-        const workspaceId = c.get("workspaceId") as number;
-        const id = Number(c.req.param("id"));
-        if (!Number.isFinite(id)) return fail(c, 400, "invalid id");
+jobRoutes.post("/jobs/webhook", requireApiKey, async (c) => {
+  const body = (await c.req.json().catch(() => null)) as null | { workspace_id?: number; event?: string; job?: Record<string, unknown> };
+  if (!body) return fail(c, 400, "invalid json");
 
-        const [row] = await db
-            .select()
-            .from(jobs)
-            .where(and(eq(jobs.id, id), eq(jobs.workspaceId, workspaceId)))
-            .limit(1);
+  const workspaceId = Number(body.workspace_id);
+  if (!Number.isFinite(workspaceId)) return fail(c, 400, "workspace_id is required");
 
-        if (!row) return fail(c, 404, "not found");
-        return ok(c, row);
-    },
-);
+  publishJobEvent(workspaceId, {
+    type: "job",
+    event: String(body.event ?? "update"),
+    job: body.job ?? {},
+  });
 
-jobRoutes.post(
-    "/jobs/:id/cancel",
-    requireUser,
-    requireWorkspace,
-    requireWorkspaceMember,
-    requireRole(["owner", "admin"]),
-    async (c) => {
-        const workspaceId = c.get("workspaceId") as number;
-        const id = Number(c.req.param("id"));
-        if (!Number.isFinite(id)) return fail(c, 400, "invalid id");
+  return ok(c, { ok: true });
+});
 
-        const deleted = await db
-            .delete(jobs)
-            .where(and(eq(jobs.id, id), eq(jobs.workspaceId, workspaceId)))
-            .returning({ id: jobs.id });
+jobRoutes.get("/jobs", requireUser, requireWorkspace, requireWorkspaceMember, async (c) => {
+  const workspaceId = c.get("workspaceId") as number;
 
-        if (deleted.length === 0) return fail(c, 404, "not found");
-        return ok(c, deleted[0]);
-    },
-);
+  const queue = (c.req.query("queue") ?? "").trim();
+  const page = Math.max(Number(c.req.query("page") ?? 1) || 1, 1);
+  const pageSize = Math.min(Math.max(Number(c.req.query("page_size") ?? 50) || 50, 1), 200);
+  const offset = (page - 1) * pageSize;
 
-jobRoutes.post(
-    "/jobs/:id/retry",
-    requireUser,
-    requireWorkspace,
-    requireWorkspaceMember,
-    requireRole(["owner", "admin"]),
-    async (c) => {
-        const workspaceId = c.get("workspaceId") as number;
-        const id = Number(c.req.param("id"));
-        if (!Number.isFinite(id)) return fail(c, 400, "invalid id");
+  const where = queue ? and(eq(jobs.workspaceId, workspaceId), eq(jobs.queue, queue)) : eq(jobs.workspaceId, workspaceId);
 
-        const updated = await db
-            .update(jobs)
-            .set({
-                attempts: 0,
-                lockedBy: null,
-                lockedUntil: null,
-                scheduledAt: new Date().toISOString(),
-            })
-            .where(and(eq(jobs.id, id), eq(jobs.workspaceId, workspaceId)))
-            .returning({ id: jobs.id, scheduledAt: jobs.scheduledAt });
+  const [countRow] = await db
+    .select({ total: sql<number>`count(*)` })
+    .from(jobs)
+    .where(where);
+  const total = Number(countRow?.total ?? 0);
 
-        if (updated.length === 0) return fail(c, 404, "not found");
-        return ok(c, updated[0]);
-    },
-);
+  const data = await db.select().from(jobs).where(where).orderBy(asc(jobs.scheduledAt)).limit(pageSize).offset(offset);
+
+  return okList(c, data, total);
+});
+
+jobRoutes.get("/jobs/:id", requireUser, requireWorkspace, requireWorkspaceMember, async (c) => {
+  const workspaceId = c.get("workspaceId") as number;
+  const id = Number(c.req.param("id"));
+  if (!Number.isFinite(id)) return fail(c, 400, "invalid id");
+
+  const [row] = await db
+    .select()
+    .from(jobs)
+    .where(and(eq(jobs.id, id), eq(jobs.workspaceId, workspaceId)))
+    .limit(1);
+
+  if (!row) return fail(c, 404, "not found");
+  return ok(c, row);
+});
+
+jobRoutes.post("/jobs/:id/cancel", requireUser, requireWorkspace, requireWorkspaceMember, requireRole(["owner", "admin"]), async (c) => {
+  const workspaceId = c.get("workspaceId") as number;
+  const id = Number(c.req.param("id"));
+  if (!Number.isFinite(id)) return fail(c, 400, "invalid id");
+
+  const deleted = await db
+    .delete(jobs)
+    .where(and(eq(jobs.id, id), eq(jobs.workspaceId, workspaceId)))
+    .returning({ id: jobs.id });
+
+  if (deleted.length === 0) return fail(c, 404, "not found");
+  publishJobEvent(workspaceId, { type: "job", event: "canceled", job: { id } });
+  return ok(c, deleted[0]);
+});
+
+jobRoutes.post("/jobs/:id/retry", requireUser, requireWorkspace, requireWorkspaceMember, requireRole(["owner", "admin"]), async (c) => {
+  const workspaceId = c.get("workspaceId") as number;
+  const id = Number(c.req.param("id"));
+  if (!Number.isFinite(id)) return fail(c, 400, "invalid id");
+
+  const updated = await db
+    .update(jobs)
+    .set({
+      attempts: 0,
+      lockedBy: null,
+      lockedUntil: null,
+      scheduledAt: new Date().toISOString(),
+    })
+    .where(and(eq(jobs.id, id), eq(jobs.workspaceId, workspaceId)))
+    .returning({ id: jobs.id, scheduledAt: jobs.scheduledAt });
+
+  if (updated.length === 0) return fail(c, 404, "not found");
+  publishJobEvent(workspaceId, { type: "job", event: "retry", job: { id } });
+  return ok(c, updated[0]);
+});

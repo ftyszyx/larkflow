@@ -8,6 +8,7 @@ import { handlePublishArticle } from "./handlers/publish_article.ts";
 
 type JobRow = {
   id: number;
+  workspaceId: number | null;
   queue: JobQueue;
   payload: Record<string, unknown>;
   attempts: number;
@@ -22,6 +23,7 @@ type WorkerRuntimeConfig = {
 };
 
 const WORKER_SETTINGS_KEY = "worker";
+const CONFIG_RELOAD_MS = 30_000;
 
 const getInt = (value: unknown, fallback: number) => {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -32,9 +34,7 @@ const getInt = (value: unknown, fallback: number) => {
   return fallback;
 };
 
-const loadWorkerRuntimeConfig = async (): Promise<WorkerRuntimeConfig> => {
-  const workerId = Deno.env.get("WORKER_ID") ?? `worker-${crypto.randomUUID()}`;
-
+const loadWorkerRuntimeConfig = async (workerId: string): Promise<WorkerRuntimeConfig> => {
   const [row] = await db
     .select({ value: systemSettings.value })
     .from(systemSettings)
@@ -51,7 +51,21 @@ const loadWorkerRuntimeConfig = async (): Promise<WorkerRuntimeConfig> => {
   return { workerId, concurrency, pollMs, lockSeconds };
 };
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleepAbortable = (ms: number, signal: AbortSignal) => {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const t = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(t);
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+};
 
 const claimNextJob = async (workerId: string, lockSeconds: number): Promise<JobRow | null> => {
   const res = await db.execute<JobRow>(sql`
@@ -69,10 +83,40 @@ const claimNextJob = async (workerId: string, lockSeconds: number): Promise<JobR
       limit 1
       for update skip locked
     )
-    returning id, queue, payload, attempts, max_attempts
+    returning id, workspace_id as "workspaceId", queue, payload, attempts, max_attempts
   `);
 
   return res.rows?.[0] ?? null;
+};
+
+const emitJobEvent = async (job: JobRow, event: string) => {
+  const apiKey = (Deno.env.get("API_KEY") ?? "").trim();
+  if (!apiKey) return;
+  if (!job.workspaceId) return;
+
+  const baseUrl = (Deno.env.get("BASE_URL") ?? "http://127.0.0.1:8000").replace(/\/$/, "");
+
+  try {
+    await fetch(`${baseUrl}/api/w/${job.workspaceId}/jobs/webhook`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Api-Key": apiKey,
+      },
+      body: JSON.stringify({
+        workspace_id: job.workspaceId,
+        event,
+        job: {
+          id: job.id,
+          queue: job.queue,
+          attempts: job.attempts,
+          maxAttempts: job.max_attempts,
+        },
+      }),
+    });
+  } catch {
+    // ignore
+  }
 };
 
 const markJobDone = async (jobId: number) => {
@@ -108,31 +152,88 @@ const dispatchJob = async (job: JobRow) => {
   throw new Error(`unknown job queue: ${job.queue}`);
 };
 
-const runWorkerLoop = async (workerId: string, pollMs: number, lockSeconds: number) => {
+const runWorkerLoop = async (opts: { workerId: string; getPollMs: () => number; getLockSeconds: () => number; signal: AbortSignal }) => {
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const job = await claimNextJob(workerId, lockSeconds);
+    if (opts.signal.aborted) return;
+
+    const job = await claimNextJob(opts.workerId, opts.getLockSeconds());
     if (!job) {
-      await sleep(pollMs);
+      await sleepAbortable(opts.getPollMs(), opts.signal);
       continue;
     }
+
+    await emitJobEvent(job, "claimed");
 
     try {
       await dispatchJob(job);
       await markJobDone(job.id);
+      await emitJobEvent(job, "done");
     } catch {
       await markJobFailed(job.id, job.attempts);
+      await emitJobEvent(job, "failed");
     }
   }
 };
 
 export const runWorker = async () => {
-  const cfg = await loadWorkerRuntimeConfig();
-  const loops = Array.from({ length: cfg.concurrency }, (_, i) => {
-    const suffix = cfg.concurrency === 1 ? "" : `-${i + 1}`;
-    return runWorkerLoop(`${cfg.workerId}${suffix}`, cfg.pollMs, cfg.lockSeconds);
-  });
-  await Promise.all(loops);
+  const baseWorkerId = Deno.env.get("WORKER_ID") ?? `worker-${crypto.randomUUID()}`;
+  let cfg = await loadWorkerRuntimeConfig(baseWorkerId);
+
+  const getPollMs = () => cfg.pollMs;
+  const getLockSeconds = () => cfg.lockSeconds;
+
+  const controllers = new Map<string, AbortController>();
+  const loopPromises = new Map<string, Promise<void>>();
+
+  const startLoop = (idx: number) => {
+    const suffix = cfg.concurrency === 1 ? "" : `-${idx}`;
+    const id = `${cfg.workerId}${suffix}`;
+    if (controllers.has(id)) return;
+    const ac = new AbortController();
+    controllers.set(id, ac);
+    const p = runWorkerLoop({ workerId: id, getPollMs, getLockSeconds, signal: ac.signal }).finally(() => {
+      controllers.delete(id);
+      loopPromises.delete(id);
+    });
+    loopPromises.set(id, p);
+  };
+
+  const stopExtraLoops = (desired: number) => {
+    // stop loops with highest suffix first
+    const ids = Array.from(controllers.keys()).sort().reverse();
+    while (ids.length > desired) {
+      const id = ids.shift();
+      if (!id) break;
+      controllers.get(id)?.abort();
+    }
+  };
+
+  const reconcile = () => {
+    const desired = Math.max(1, cfg.concurrency);
+    // Ensure IDs are stable across reloads by using numeric suffixes 1..desired
+    for (let i = 1; i <= desired; i++) startLoop(i);
+    stopExtraLoops(desired);
+  };
+
+  reconcile();
+
+  const reloadTimer = setInterval(async () => {
+    try {
+      const next = await loadWorkerRuntimeConfig(baseWorkerId);
+      cfg = next;
+      reconcile();
+    } catch {
+      // ignore reload failures
+    }
+  }, CONFIG_RELOAD_MS);
+
+  // Block forever until all loops end (normally never). If all loops are aborted, keep process alive.
+  try {
+    await Promise.race([Promise.all(loopPromises.values())]);
+  } finally {
+    clearInterval(reloadTimer);
+  }
 };
 
 if (import.meta.main) {

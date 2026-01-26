@@ -18,12 +18,8 @@ const onSubmit = async () => {
     const res = await login(email.value.trim(), password.value)
     auth.setSession(res.token)
 
-    const meRes = await me()
-    auth.user = meRes.user
-    auth.workspaces = meRes.workspaces
-
+    await auth.ensureMe()
     message.success('login success')
-
     const active = auth.activeWorkspaceId?.trim()
     const hasActive = !!active && auth.workspaces.some((w) => String(w.id) === active)
     router.push(hasActive ? '/integrations' : '/select-workspace')
