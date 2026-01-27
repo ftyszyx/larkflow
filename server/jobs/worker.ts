@@ -23,7 +23,7 @@ type WorkerRuntimeConfig = {
 };
 
 const WORKER_SETTINGS_KEY = "worker";
-const CONFIG_RELOAD_MS = 30_000;
+const CONFIG_RELOAD_MS = 30_000; // 30 seconds reload config
 
 const getInt = (value: unknown, fallback: number) => {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -34,6 +34,7 @@ const getInt = (value: unknown, fallback: number) => {
   return fallback;
 };
 
+//加载配置
 const loadWorkerRuntimeConfig = async (workerId: string): Promise<WorkerRuntimeConfig> => {
   const [row] = await db
     .select({ value: systemSettings.value })
@@ -51,13 +52,16 @@ const loadWorkerRuntimeConfig = async (workerId: string): Promise<WorkerRuntimeC
   return { workerId, concurrency, pollMs, lockSeconds };
 };
 
+//休眠
 const sleepAbortable = (ms: number, signal: AbortSignal) => {
   if (signal.aborted) return Promise.resolve();
   return new Promise<void>((resolve) => {
+    //休眠固定时间
     const t = setTimeout(() => {
       signal.removeEventListener("abort", onAbort);
       resolve();
     }, ms);
+    //监听取消
     const onAbort = () => {
       clearTimeout(t);
       signal.removeEventListener("abort", onAbort);
@@ -67,6 +71,7 @@ const sleepAbortable = (ms: number, signal: AbortSignal) => {
   });
 };
 
+//获取任务
 const claimNextJob = async (workerId: string, lockSeconds: number): Promise<JobRow | null> => {
   const res = await db.execute<JobRow>(sql`
     update jobs
@@ -89,6 +94,7 @@ const claimNextJob = async (workerId: string, lockSeconds: number): Promise<JobR
   return res.rows?.[0] ?? null;
 };
 
+//触发webhook
 const emitJobEvent = async (job: JobRow, event: string) => {
   if (!job.workspaceId) return;
 
@@ -117,10 +123,12 @@ const emitJobEvent = async (job: JobRow, event: string) => {
   }
 };
 
+//完成任务
 const markJobDone = async (jobId: number) => {
   await db.delete(jobs).where(sql`${jobs.id} = ${jobId}`);
 };
 
+//失败任务
 const markJobFailed = async (jobId: number, attempts: number) => {
   await db
     .update(jobs)
@@ -134,37 +142,30 @@ const markJobFailed = async (jobId: number, attempts: number) => {
     .where(sql`${jobs.id} = ${jobId}`);
 };
 
+//处理任务
 const dispatchJob = async (job: JobRow) => {
   const payload = job.payload;
-
   if (job.queue === JobQueue.SyncFeishuSpace || payload.type === JobQueue.SyncFeishuSpace) {
     await handleSyncFeishuSpace(payload as unknown as Parameters<typeof handleSyncFeishuSpace>[0]);
     return;
   }
-
   if (job.queue === JobQueue.PublishArticle || payload.type === JobQueue.PublishArticle) {
     await handlePublishArticle(payload as unknown as Parameters<typeof handlePublishArticle>[0]);
     return;
   }
-
   throw new Error(`unknown job queue: ${job.queue}`);
 };
 
 const runWorkerLoop = async (opts: { workerId: string; getPollMs: () => number; getLockSeconds: () => number; signal: AbortSignal }) => {
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     if (opts.signal.aborted) return;
-
     const job = await claimNextJob(opts.workerId, opts.getLockSeconds());
     if (!job) {
       await sleepAbortable(opts.getPollMs(), opts.signal);
       continue;
     }
-
     console.log(`[worker] claimed job id=${job.id} queue=${job.queue} by=${opts.workerId}`);
-
     await emitJobEvent(job, "claimed");
-
     try {
       await dispatchJob(job);
       await markJobDone(job.id);
@@ -181,17 +182,13 @@ const runWorkerLoop = async (opts: { workerId: string; getPollMs: () => number; 
 export const runWorker = async () => {
   const baseWorkerId = Deno.env.get("WORKER_ID") ?? `worker-${crypto.randomUUID()}`;
   let cfg = await loadWorkerRuntimeConfig(baseWorkerId);
-
   console.log(
     `[worker] start id=${cfg.workerId} concurrency=${cfg.concurrency} pollMs=${cfg.pollMs} lockSeconds=${cfg.lockSeconds} reloadMs=${CONFIG_RELOAD_MS}`,
   );
-
   const getPollMs = () => cfg.pollMs;
   const getLockSeconds = () => cfg.lockSeconds;
-
-  const controllers = new Map<string, AbortController>();
-  const loopPromises = new Map<string, Promise<void>>();
-
+  const controllers = new Map<string, AbortController>();//保存所有abort
+  const loopPromises = new Map<string, Promise<void>>(); //保存所有任务
   const startLoop = (idx: number) => {
     const suffix = cfg.concurrency === 1 ? "" : `-${idx}`;
     const id = `${cfg.workerId}${suffix}`;
@@ -206,7 +203,6 @@ export const runWorker = async () => {
   };
 
   const stopExtraLoops = (desired: number) => {
-    // stop loops with highest suffix first
     const ids = Array.from(controllers.keys()).sort().reverse();
     while (ids.length > desired) {
       const id = ids.shift();
@@ -217,18 +213,15 @@ export const runWorker = async () => {
 
   const reconcile = () => {
     const desired = Math.max(1, cfg.concurrency);
-    // Ensure IDs are stable across reloads by using numeric suffixes 1..desired
     for (let i = 1; i <= desired; i++) startLoop(i);
     stopExtraLoops(desired);
   };
 
   reconcile();
-
   const reloadTimer = setInterval(async () => {
     try {
       const next = await loadWorkerRuntimeConfig(baseWorkerId);
-      const changed =
-        next.concurrency !== cfg.concurrency || next.pollMs !== cfg.pollMs || next.lockSeconds !== cfg.lockSeconds || next.workerId !== cfg.workerId;
+      const changed = next.concurrency !== cfg.concurrency || next.pollMs !== cfg.pollMs || next.lockSeconds !== cfg.lockSeconds || next.workerId !== cfg.workerId;
       cfg = next;
       reconcile();
       if (changed) {
@@ -239,9 +232,8 @@ export const runWorker = async () => {
     }
   }, CONFIG_RELOAD_MS);
 
-  // Block forever until all loops end (normally never). If all loops are aborted, keep process alive.
   try {
-    await Promise.race([Promise.all(loopPromises.values())]);
+    await Promise.all(loopPromises.values());
   } finally {
     clearInterval(reloadTimer);
   }

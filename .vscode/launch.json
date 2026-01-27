@@ -15,6 +15,21 @@
       "program": "${workspaceFolder}/server/main.ts",
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen"
+    },
+    {
+      "name": "Server: Run worker",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/server",
+      "runtimeExecutable": "deno",
+      "runtimeArgs": [
+        "run",
+        "--allow-all",
+        "--env-file=.env"
+      ],
+      "program": "${workspaceFolder}/server/jobs/worker.ts",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
     }
   ]
 }

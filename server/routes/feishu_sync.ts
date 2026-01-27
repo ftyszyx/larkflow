@@ -1,12 +1,12 @@
 import { Hono } from "hono";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db.ts";
 import { articles, feishuSpaceSyncs, integrations, jobs } from "../drizzle/schema.ts";
 import { JobQueue } from "../constants/jobs.ts";
 import { requireUser } from "../middleware/auth.ts";
 import { requireRole, requireWorkspace, requireWorkspaceMember } from "../middleware/workspace.ts";
 import type { AppEnv } from "../types.ts";
-import { fail, ok } from "../utils/response.ts";
+import { fail, ok, okList } from "../utils/response.ts";
 
 export const integrationSyncRoutes = new Hono<AppEnv>();
 
@@ -135,8 +135,72 @@ integrationSyncRoutes.get(
       .where(and(eq(integrations.id, integrationId), eq(integrations.workspaceId, workspaceId)));
     if (integration.length === 0) return fail(c, 404, "not found");
 
-    const data = await db.select().from(feishuSpaceSyncs).where(eq(feishuSpaceSyncs.integrationId, integrationId));
-    return ok(c, data);
+    const page = Math.max(1, Number(c.req.query("page") ?? "1") || 1);
+    const pageSizeRaw = Number(c.req.query("page_size") ?? "20") || 20;
+    const pageSize = Math.min(100, Math.max(1, pageSizeRaw));
+    const offset = (page - 1) * pageSize;
+
+    const where = eq(feishuSpaceSyncs.integrationId, integrationId);
+
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(feishuSpaceSyncs)
+      .where(where);
+
+    const items = await db
+      .select()
+      .from(feishuSpaceSyncs)
+      .where(where)
+      .orderBy(desc(feishuSpaceSyncs.updatedAt))
+      .limit(pageSize)
+      .offset(offset);
+
+    return okList(c, items, Number(count ?? 0));
+  },
+);
+
+integrationSyncRoutes.get(
+  "/syncs",
+  requireUser,
+  requireWorkspace,
+  requireWorkspaceMember,
+  async (c) => {
+    const workspaceId = c.get("workspaceId") as number;
+
+    const integrationIdStr = (c.req.query("integration_id") ?? "").trim();
+    const integrationId = integrationIdStr ? Number(integrationIdStr) : null;
+    if (integrationIdStr && !Number.isFinite(integrationId)) return fail(c, 400, "invalid integration_id");
+
+    const docToken = (c.req.query("doc_token") ?? "").trim();
+
+    const page = Math.max(1, Number(c.req.query("page") ?? "1") || 1);
+    const pageSizeRaw = Number(c.req.query("page_size") ?? "20") || 20;
+    const pageSize = Math.min(100, Math.max(1, pageSizeRaw));
+    const offset = (page - 1) * pageSize;
+
+    const where = and(
+      eq(integrations.workspaceId, workspaceId),
+      ...(integrationId ? [eq(feishuSpaceSyncs.integrationId, integrationId)] : []),
+      ...(docToken ? [eq(feishuSpaceSyncs.docToken, docToken)] : []),
+    );
+
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(feishuSpaceSyncs)
+      .innerJoin(integrations, eq(integrations.id, feishuSpaceSyncs.integrationId))
+      .where(where);
+
+    const rows = await db
+      .select({ sync: feishuSpaceSyncs })
+      .from(feishuSpaceSyncs)
+      .innerJoin(integrations, eq(integrations.id, feishuSpaceSyncs.integrationId))
+      .where(where)
+      .orderBy(desc(feishuSpaceSyncs.updatedAt))
+      .limit(pageSize)
+      .offset(offset);
+
+    const items = rows.map((r) => r.sync);
+    return okList(c, items, Number(count ?? 0));
   },
 );
 

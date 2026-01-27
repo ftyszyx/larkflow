@@ -1,5 +1,5 @@
 import request from '@/utils/request'
-import type { FeishuSpaceSync, Integration } from '@/types/api'
+import type { ApiPagedResponse, FeishuSpaceSync, Integration } from '@/types/api'
 import { useAuthStore } from '@/stores/auth'
 
 const base = () => {
@@ -46,6 +46,23 @@ export const resetSyncStatus = async (integrationId: number, docToken: string) =
   return (await request.post(`${base()}/integrations/${integrationId}/sync/reset`, { doc_token: docToken })) as FeishuSpaceSync
 }
 
-export const listSyncs = async (integrationId: number) => {
-  return (await request.get(`${base()}/integrations/${integrationId}/syncs`)) as FeishuSpaceSync[]
+export const listSyncRecords = async (opts: { integrationId?: number | null; docToken?: string | null; page?: number; pageSize?: number } = {}) => {
+  const page = opts.page ?? 1
+  const pageSize = opts.pageSize ?? 20
+  const params: Record<string, unknown> = {
+    page,
+    page_size: pageSize,
+  }
+  if (opts.integrationId) params.integration_id = opts.integrationId
+  if (opts.docToken?.trim()) params.doc_token = opts.docToken.trim()
+
+  return (await request.get(`${base()}/syncs`, { params })) as ApiPagedResponse<FeishuSpaceSync>
+}
+
+export const listWorkspaceSyncs = async (page = 1, pageSize = 20) => {
+  return await listSyncRecords({ page, pageSize })
+}
+
+export const listSyncs = async (integrationId: number, page = 1, pageSize = 20) => {
+  return await listSyncRecords({ integrationId, page, pageSize })
 }

@@ -1,5 +1,6 @@
 {
   "imports": {
+    "@larksuiteoapi/node-sdk": "npm:@larksuiteoapi/node-sdk@^1.56.1",
     "@types/ali-oss": "npm:@types/ali-oss@^6.23.1",
     "@types/pg": "npm:@types/pg@^8.16.0",
     "ali-oss": "npm:ali-oss@6.21.0",

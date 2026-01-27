@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { getIntegrations, getSyncStatus, listSyncs, resetSyncStatus, triggerSync } from "@/apis/integrations";
+import { getIntegrations, getSyncStatus, listSyncRecords, resetSyncStatus, triggerSync } from "@/apis/integrations";
 import type { FeishuSpaceSync, Integration } from "@/types/api";
 import { message } from "ant-design-vue";
 import { computed, onMounted, ref } from "vue";
@@ -12,6 +12,9 @@ const docToken = ref("");
 
 const recordsLoading = ref(false);
 const records = ref<FeishuSpaceSync[]>([]);
+const recordsTotal = ref(0);
+const recordsPage = ref(1);
+const recordsPageSize = ref(20);
 
 const createOpen = ref(false);
 const createIntegrationId = ref<number | null>(null);
@@ -34,10 +37,16 @@ const loadIntegrations = async () => {
 };
 
 const loadRecords = async () => {
-  if (!integrationId.value) return;
   recordsLoading.value = true;
   try {
-    records.value = await listSyncs(integrationId.value as number);
+    const res = await listSyncRecords({
+      integrationId: integrationId.value,
+      docToken: docToken.value,
+      page: recordsPage.value,
+      pageSize: recordsPageSize.value,
+    });
+    records.value = res.items;
+    recordsTotal.value = res.total;
   } finally {
     recordsLoading.value = false;
   }
@@ -46,6 +55,13 @@ const loadRecords = async () => {
 const onIntegrationChange = async () => {
   sync.value = null;
   docToken.value = "";
+  recordsPage.value = 1;
+  await loadRecords();
+};
+
+const onRecordsPaginationChange = async (page: number, pageSize?: number) => {
+  recordsPage.value = page;
+  if (pageSize) recordsPageSize.value = pageSize;
   await loadRecords();
 };
 
@@ -65,19 +81,6 @@ const submitCreate = async () => {
     if (integrationId.value === createIntegrationId.value) {
       await loadRecords();
     }
-  } finally {
-    loading.value = false;
-  }
-};
-
-const runSync = async () => {
-  if (!canRun.value) return;
-  loading.value = true;
-  try {
-    await triggerSync(integrationId.value as number, docToken.value.trim());
-    message.success("sync job created");
-    await refreshStatus();
-    await loadRecords();
   } finally {
     loading.value = false;
   }
@@ -109,9 +112,7 @@ const reset = async () => {
 
 onMounted(async () => {
   await loadIntegrations();
-  if (integrationId.value) {
-    await loadRecords();
-  }
+  await loadRecords();
 });
 </script>
 
@@ -121,7 +122,7 @@ onMounted(async () => {
       <div style="font-size: 18px; font-weight: 600">Sync</div>
       <a-space :size="8">
         <a-button type="primary" @click="openCreate">New Sync Task</a-button>
-        <a-button @click="loadRecords" :disabled="!integrationId" :loading="recordsLoading">Refresh Records</a-button>
+        <a-button @click="loadRecords" :loading="recordsLoading">Refresh Records</a-button>
       </a-space>
     </a-space>
 
@@ -143,10 +144,6 @@ onMounted(async () => {
       </a-form-item>
 
       <a-form-item>
-        <a-button type="primary" :disabled="!canRun" :loading="loading" @click="runSync">Sync</a-button>
-      </a-form-item>
-
-      <a-form-item>
         <a-button :disabled="!canRun" :loading="loading" @click="refreshStatus">Refresh</a-button>
       </a-form-item>
 
@@ -162,7 +159,20 @@ onMounted(async () => {
       <a-descriptions-item label="Updated">{{ sync.updatedAt }}</a-descriptions-item>
     </a-descriptions>
 
-    <a-table :dataSource="records" :loading="recordsLoading" rowKey="id" size="small" :pagination="false">
+    <a-table
+      :dataSource="records"
+      :loading="recordsLoading"
+      rowKey="id"
+      size="small"
+      :pagination="{
+        current: recordsPage,
+        pageSize: recordsPageSize,
+        total: recordsTotal,
+        showSizeChanger: true,
+        onChange: onRecordsPaginationChange,
+        onShowSizeChange: onRecordsPaginationChange,
+      }"
+    >
       <a-table-column title="ID" dataIndex="id" />
       <a-table-column title="Doc Token" dataIndex="docToken" />
       <a-table-column title="Status" dataIndex="status" />
@@ -178,7 +188,6 @@ onMounted(async () => {
             <a-select-option v-for="i in integrations" :key="i.id" :value="i.id"> {{ i.name }} (#{{ i.id }}) </a-select-option>
           </a-select>
         </a-form-item>
-
         <a-form-item label="Doc Token" required>
           <a-input v-model:value="createDocToken" placeholder="doccn..." />
         </a-form-item>

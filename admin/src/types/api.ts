@@ -8,6 +8,11 @@ export type ApiObjectResponse<T> = {
   data: T
 }
 
+export type ApiPagedResponse<T> = {
+  items: T[]
+  total: number
+}
+
 export type Workspace = {
   id: number
   name: string
