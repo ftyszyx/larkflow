@@ -1,4 +1,4 @@
-import { pgTable, text, jsonb, timestamp, index, uniqueIndex, bigint, integer, boolean, foreignKey, check, primaryKey } from "drizzle-orm/pg-core"
+import { pgTable, text, jsonb, timestamp, index, uniqueIndex, bigint, integer, foreignKey, check, boolean, primaryKey } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 
@@ -30,6 +30,46 @@ export const jobs = pgTable("jobs", {
 	index("idx_jobs_queue_sched").using("btree", table.queue.asc().nullsLast().op("timestamptz_ops"), table.scheduledAt.asc().nullsLast().op("timestamptz_ops")),
 	index("idx_jobs_workspace_queue_sched").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.queue.asc().nullsLast().op("text_ops"), table.scheduledAt.asc().nullsLast().op("text_ops")),
 	uniqueIndex("uq_jobs_workspace_queue_job_key").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.queue.asc().nullsLast().op("int8_ops"), table.jobKey.asc().nullsLast().op("int8_ops")),
+]);
+
+export const articles = pgTable("articles", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "articles_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	workspaceId: bigint("workspace_id", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	integrationId: bigint("integration_id", { mode: "number" }).notNull(),
+	sourceDocToken: text("source_doc_token").notNull(),
+	sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true, mode: 'string' }),
+	title: text().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	coverAssetId: bigint("cover_asset_id", { mode: "number" }),
+	coverUrl: text("cover_url"),
+	contentMd: text("content_md").default('').notNull(),
+	contentMdFinal: text("content_md_final").default('').notNull(),
+	status: text().default('draft').notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	deletedAt: timestamp("deleted_at", { withTimezone: true, mode: 'string' }),
+	sourceDocUrl: text("source_doc_url"),
+}, (table) => [
+	index("idx_articles_doc_updated_at").using("btree", table.integrationId.asc().nullsLast().op("timestamptz_ops"), table.sourceDocToken.asc().nullsLast().op("text_ops"), table.sourceUpdatedAt.asc().nullsLast().op("timestamptz_ops")),
+	index("idx_articles_status").using("btree", table.status.asc().nullsLast().op("text_ops")),
+	index("idx_articles_updated_at").using("btree", table.updatedAt.asc().nullsLast().op("timestamptz_ops")),
+	index("idx_articles_workspace_status").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.status.asc().nullsLast().op("text_ops")),
+	index("idx_articles_workspace_updated_at").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.updatedAt.asc().nullsLast().op("timestamptz_ops")),
+	uniqueIndex("uq_articles_integration_doc").using("btree", table.integrationId.asc().nullsLast().op("int8_ops"), table.sourceDocToken.asc().nullsLast().op("text_ops")),
+	foreignKey({
+		columns: [table.workspaceId],
+		foreignColumns: [workspaces.id],
+		name: "articles_workspace_id_workspaces_id_fk"
+	}).onDelete("cascade"),
+	foreignKey({
+		columns: [table.integrationId],
+		foreignColumns: [integrations.id],
+		name: "articles_integration_id_integrations_id_fk"
+	}).onDelete("cascade"),
+	check("articles_status_check", sql`status = ANY (ARRAY['draft'::text, 'ready'::text, 'published'::text, 'archived'::text])`),
 ]);
 
 export const workspaces = pgTable("workspaces", {
@@ -115,6 +155,8 @@ export const feishuSpaceSyncs = pgTable("feishu_space_syncs", {
 	lastError: text("last_error"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	docUrl: text("doc_url"),
+	docTitle: text("doc_title"),
 }, (table) => [
 	index("idx_feishu_space_syncs_integration_status").using("btree", table.integrationId.asc().nullsLast().op("int8_ops"), table.status.asc().nullsLast().op("text_ops")),
 	uniqueIndex("uq_feishu_space_syncs_integration_doc").using("btree", table.integrationId.asc().nullsLast().op("text_ops"), table.docToken.asc().nullsLast().op("int8_ops")),
@@ -124,45 +166,6 @@ export const feishuSpaceSyncs = pgTable("feishu_space_syncs", {
 		name: "feishu_space_syncs_integration_id_integrations_id_fk"
 	}).onDelete("cascade"),
 	check("feishu_space_syncs_status_check", sql`status = ANY (ARRAY['idle'::text, 'syncing'::text, 'failed'::text, 'disabled'::text])`),
-]);
-
-export const articles = pgTable("articles", {
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "articles_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	workspaceId: bigint("workspace_id", { mode: "number" }).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	integrationId: bigint("integration_id", { mode: "number" }).notNull(),
-	sourceDocToken: text("source_doc_token").notNull(),
-	sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true, mode: 'string' }),
-	title: text().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	coverAssetId: bigint("cover_asset_id", { mode: "number" }),
-	coverUrl: text("cover_url"),
-	contentMd: text("content_md").default('').notNull(),
-	contentMdFinal: text("content_md_final").default('').notNull(),
-	status: text().default('draft').notNull(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	deletedAt: timestamp("deleted_at", { withTimezone: true, mode: 'string' }),
-}, (table) => [
-	index("idx_articles_doc_updated_at").using("btree", table.integrationId.asc().nullsLast().op("timestamptz_ops"), table.sourceDocToken.asc().nullsLast().op("text_ops"), table.sourceUpdatedAt.asc().nullsLast().op("timestamptz_ops")),
-	index("idx_articles_status").using("btree", table.status.asc().nullsLast().op("text_ops")),
-	index("idx_articles_updated_at").using("btree", table.updatedAt.asc().nullsLast().op("timestamptz_ops")),
-	index("idx_articles_workspace_status").using("btree", table.workspaceId.asc().nullsLast().op("int8_ops"), table.status.asc().nullsLast().op("text_ops")),
-	index("idx_articles_workspace_updated_at").using("btree", table.workspaceId.asc().nullsLast().op("timestamptz_ops"), table.updatedAt.asc().nullsLast().op("timestamptz_ops")),
-	uniqueIndex("uq_articles_integration_doc").using("btree", table.integrationId.asc().nullsLast().op("int8_ops"), table.sourceDocToken.asc().nullsLast().op("text_ops")),
-	foreignKey({
-		columns: [table.workspaceId],
-		foreignColumns: [workspaces.id],
-		name: "articles_workspace_id_workspaces_id_fk"
-	}).onDelete("cascade"),
-	foreignKey({
-		columns: [table.integrationId],
-		foreignColumns: [integrations.id],
-		name: "articles_integration_id_integrations_id_fk"
-	}).onDelete("cascade"),
-	check("articles_status_check", sql`status = ANY (ARRAY['draft'::text, 'ready'::text, 'published'::text, 'archived'::text])`),
 ]);
 
 export const assets = pgTable("assets", {

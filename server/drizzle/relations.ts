@@ -1,47 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { workspaces, workspaceInvitations, users, integrations, feishuSpaceSyncs, articles, assets, articlePublications, workspaceMembers, workspaceSettings } from "./schema.ts";
-
-export const workspaceInvitationsRelations = relations(workspaceInvitations, ({ one }) => ({
-	workspace: one(workspaces, {
-		fields: [workspaceInvitations.workspaceId],
-		references: [workspaces.id]
-	}),
-	user: one(users, {
-		fields: [workspaceInvitations.createdByUserId],
-		references: [users.id]
-	}),
-}));
-
-export const workspacesRelations = relations(workspaces, ({ many }) => ({
-	workspaceInvitations: many(workspaceInvitations),
-	integrations: many(integrations),
-	articles: many(articles),
-	assets: many(assets),
-	workspaceMembers: many(workspaceMembers),
-	workspaceSettings: many(workspaceSettings),
-}));
-
-export const usersRelations = relations(users, ({ many }) => ({
-	workspaceInvitations: many(workspaceInvitations),
-	workspaceMembers: many(workspaceMembers),
-}));
-
-export const integrationsRelations = relations(integrations, ({ one, many }) => ({
-	workspace: one(workspaces, {
-		fields: [integrations.workspaceId],
-		references: [workspaces.id]
-	}),
-	feishuSpaceSyncs: many(feishuSpaceSyncs),
-	articles: many(articles),
-	articlePublications: many(articlePublications),
-}));
-
-export const feishuSpaceSyncsRelations = relations(feishuSpaceSyncs, ({ one }) => ({
-	integration: one(integrations, {
-		fields: [feishuSpaceSyncs.integrationId],
-		references: [integrations.id]
-	}),
-}));
+import { workspaces, articles, integrations, workspaceInvitations, users, feishuSpaceSyncs, assets, articlePublications, workspaceMembers, workspaceSettings } from "./schema.ts";
 
 export const articlesRelations = relations(articles, ({ one, many }) => ({
 	workspace: one(workspaces, {
@@ -54,6 +12,48 @@ export const articlesRelations = relations(articles, ({ one, many }) => ({
 	}),
 	assets: many(assets),
 	articlePublications: many(articlePublications),
+}));
+
+export const workspacesRelations = relations(workspaces, ({ many }) => ({
+	articles: many(articles),
+	workspaceInvitations: many(workspaceInvitations),
+	integrations: many(integrations),
+	assets: many(assets),
+	workspaceMembers: many(workspaceMembers),
+	workspaceSettings: many(workspaceSettings),
+}));
+
+export const integrationsRelations = relations(integrations, ({ one, many }) => ({
+	articles: many(articles),
+	workspace: one(workspaces, {
+		fields: [integrations.workspaceId],
+		references: [workspaces.id]
+	}),
+	feishuSpaceSyncs: many(feishuSpaceSyncs),
+	articlePublications: many(articlePublications),
+}));
+
+export const workspaceInvitationsRelations = relations(workspaceInvitations, ({ one }) => ({
+	workspace: one(workspaces, {
+		fields: [workspaceInvitations.workspaceId],
+		references: [workspaces.id]
+	}),
+	user: one(users, {
+		fields: [workspaceInvitations.createdByUserId],
+		references: [users.id]
+	}),
+}));
+
+export const usersRelations = relations(users, ({ many }) => ({
+	workspaceInvitations: many(workspaceInvitations),
+	workspaceMembers: many(workspaceMembers),
+}));
+
+export const feishuSpaceSyncsRelations = relations(feishuSpaceSyncs, ({ one }) => ({
+	integration: one(integrations, {
+		fields: [feishuSpaceSyncs.integrationId],
+		references: [integrations.id]
+	}),
 }));
 
 export const assetsRelations = relations(assets, ({ one }) => ({

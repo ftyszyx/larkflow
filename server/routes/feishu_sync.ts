@@ -7,11 +7,12 @@ import { requireUser } from "../middleware/auth.ts";
 import { requireRole, requireWorkspace, requireWorkspaceMember } from "../middleware/workspace.ts";
 import type { AppEnv } from "../types.ts";
 import { fail, ok, okList } from "../utils/response.ts";
+import { SyncFeishuSpaceStatus } from "../constants/sync.ts";
 
 export const integrationSyncRoutes = new Hono<AppEnv>();
 
 type SyncIntegrationBody = {
-  doc_token?: string;
+  doc_url?: string;
 };
 
 integrationSyncRoutes.post(
@@ -26,7 +27,11 @@ integrationSyncRoutes.post(
     if (!Number.isFinite(integrationId)) return fail(c, 400, "invalid id");
 
     const body = (await c.req.json().catch(() => null)) as SyncIntegrationBody | null;
-    const docToken = body?.doc_token?.trim();
+    const docUrl = body?.doc_url?.trim();
+    if (!docUrl) return fail(c, 400, "doc_url is required");
+    //解析doc_url获取doc_token
+    //https://my.feishu.cn/wiki/FG5BwZVXKiI50fk5kcUc6HDqn4u?fromScene=spaceOverview
+    const docToken = docUrl.split("/").pop()?.split("?")[0];
     if (!docToken) return fail(c, 400, "doc_token is required");
 
     const integration = await db
@@ -40,7 +45,7 @@ integrationSyncRoutes.post(
       .from(feishuSpaceSyncs)
       .where(and(eq(feishuSpaceSyncs.integrationId, integrationId), eq(feishuSpaceSyncs.docToken, docToken)));
 
-    if (existing.length > 0 && existing[0].status === "syncing") {
+    if (existing.length > 0 && existing[0].status === SyncFeishuSpaceStatus.Syncing) {
       return ok(c, { sync: existing[0], jobCreated: false });
     }
 
@@ -48,15 +53,16 @@ integrationSyncRoutes.post(
       .insert(feishuSpaceSyncs)
       .values({
         integrationId,
+        docUrl,
         docToken,
-        status: "idle",
+        status: SyncFeishuSpaceStatus.Idle,
         lastSyncedAt: null,
         lastError: null,
       })
       .onConflictDoUpdate({
         target: [feishuSpaceSyncs.integrationId, feishuSpaceSyncs.docToken],
         set: {
-          status: "idle",
+          status: SyncFeishuSpaceStatus.Idle,
           lastSyncedAt: null,
           lastError: null,
           updatedAt: sql`now()`,
@@ -82,6 +88,7 @@ integrationSyncRoutes.post(
           type: JobQueue.SyncFeishuSpace,
           integrationId,
           workspaceId,
+          docUrl,
           docToken,
         },
       })
@@ -204,6 +211,31 @@ integrationSyncRoutes.get(
   },
 );
 
+integrationSyncRoutes.delete(
+  "/syncs/:id",
+  requireUser,
+  requireWorkspace,
+  requireWorkspaceMember,
+  requireRole(["owner", "admin", "member"]),
+  async (c) => {
+    const workspaceId = c.get("workspaceId") as number;
+    const id = Number(c.req.param("id"));
+    if (!Number.isFinite(id)) return fail(c, 400, "invalid id");
+
+    const [row] = await db
+      .select({ id: feishuSpaceSyncs.id })
+      .from(feishuSpaceSyncs)
+      .innerJoin(integrations, eq(integrations.id, feishuSpaceSyncs.integrationId))
+      .where(and(eq(feishuSpaceSyncs.id, id), eq(integrations.workspaceId, workspaceId)))
+      .limit(1);
+
+    if (!row) return fail(c, 404, "not found");
+
+    const deleted = await db.delete(feishuSpaceSyncs).where(eq(feishuSpaceSyncs.id, id)).returning({ id: feishuSpaceSyncs.id });
+    return ok(c, deleted[0]);
+  },
+);
+
 integrationSyncRoutes.get(
   "/integrations/:id/articles/byDocToken",
   requireUser,
@@ -232,47 +264,3 @@ integrationSyncRoutes.get(
   },
 );
 
-integrationSyncRoutes.post(
-  "/integrations/:id/sync/reset",
-  requireUser,
-  requireWorkspace,
-  requireWorkspaceMember,
-  requireRole(["owner", "admin"]),
-  async (c) => {
-    const workspaceId = c.get("workspaceId") as number;
-    const integrationId = Number(c.req.param("id"));
-    if (!Number.isFinite(integrationId)) return fail(c, 400, "invalid id");
-
-    const body = (await c.req.json().catch(() => null)) as SyncIntegrationBody | null;
-    const docToken = body?.doc_token?.trim();
-    if (!docToken) return fail(c, 400, "doc_token is required");
-
-    const integration = await db
-      .select({ id: integrations.id })
-      .from(integrations)
-      .where(and(eq(integrations.id, integrationId), eq(integrations.workspaceId, workspaceId)));
-    if (integration.length === 0) return fail(c, 404, "not found");
-
-    const rows = await db
-      .insert(feishuSpaceSyncs)
-      .values({
-        integrationId,
-        docToken,
-        status: "idle",
-        lastSyncedAt: null,
-        lastError: null,
-      })
-      .onConflictDoUpdate({
-        target: [feishuSpaceSyncs.integrationId, feishuSpaceSyncs.docToken],
-        set: {
-          status: "idle",
-          lastSyncedAt: null,
-          lastError: null,
-          updatedAt: sql`now()`,
-        },
-      })
-      .returning();
-
-    return ok(c, rows[0]);
-  },
-);

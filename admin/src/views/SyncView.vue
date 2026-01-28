@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { getIntegrations, getSyncStatus, listSyncRecords, resetSyncStatus, triggerSync } from "@/apis/integrations";
+import { deleteSyncRecord, getIntegrations, getSyncStatus, listSyncRecords, resetSyncStatus, triggerSync } from "@/apis/integrations";
 import type { FeishuSpaceSync, Integration } from "@/types/api";
 import { message } from "ant-design-vue";
 import { computed, onMounted, ref } from "vue";
@@ -18,13 +18,13 @@ const recordsPageSize = ref(20);
 
 const createOpen = ref(false);
 const createIntegrationId = ref<number | null>(null);
-const createDocToken = ref("");
+const createDocUrl  = ref("");
 
 const sync = ref<FeishuSpaceSync | null>(null);
 const loading = ref(false);
 
 const canRun = computed(() => !!integrationId.value && !!docToken.value.trim());
-const canCreate = computed(() => !!createIntegrationId.value && !!createDocToken.value.trim());
+const canCreate = computed(() => !!createIntegrationId.value && !!createDocUrl.value.trim());
 
 const loadIntegrations = async () => {
   integrationsLoading.value = true;
@@ -33,6 +33,18 @@ const loadIntegrations = async () => {
     integrations.value = res;
   } finally {
     integrationsLoading.value = false;
+  }
+};
+
+const deleteRecord = async (row: FeishuSpaceSync) => {
+  if (!row?.id) return;
+  loading.value = true;
+  try {
+    await deleteSyncRecord(row.id);
+    message.success("deleted");
+    await loadRecords();
+  } finally {
+    loading.value = false;
   }
 };
 
@@ -67,7 +79,7 @@ const onRecordsPaginationChange = async (page: number, pageSize?: number) => {
 
 const openCreate = () => {
   createIntegrationId.value = integrationId.value;
-  createDocToken.value = "";
+  createDocUrl.value = "";
   createOpen.value = true;
 };
 
@@ -75,7 +87,7 @@ const submitCreate = async () => {
   if (!canCreate.value) return;
   loading.value = true;
   try {
-    await triggerSync(createIntegrationId.value as number, createDocToken.value.trim());
+    await triggerSync(createIntegrationId.value as number, createDocUrl.value.trim());
     message.success("sync job created");
     createOpen.value = false;
     if (integrationId.value === createIntegrationId.value) {
@@ -97,18 +109,21 @@ const refreshStatus = async () => {
   }
 };
 
-const reset = async () => {
-  if (!canRun.value) return;
+const retryRecord = async (row: FeishuSpaceSync) => {
+  if (!row?.integrationId || !row.docUrl?.trim()) {
+    message.error("missing integrationId/docUrl");
+    return;
+  }
   loading.value = true;
   try {
-    const res = await resetSyncStatus(integrationId.value as number, docToken.value.trim());
-    sync.value = res;
-    message.success("reset done");
+    await triggerSync(row.integrationId, row.docUrl.trim());
+    message.success("sync job created");
     await loadRecords();
   } finally {
     loading.value = false;
   }
 };
+
 
 onMounted(async () => {
   await loadIntegrations();
@@ -122,7 +137,6 @@ onMounted(async () => {
       <div style="font-size: 18px; font-weight: 600">Sync</div>
       <a-space :size="8">
         <a-button type="primary" @click="openCreate">New Sync Task</a-button>
-        <a-button @click="loadRecords" :loading="recordsLoading">Refresh Records</a-button>
       </a-space>
     </a-space>
 
@@ -145,10 +159,6 @@ onMounted(async () => {
 
       <a-form-item>
         <a-button :disabled="!canRun" :loading="loading" @click="refreshStatus">Refresh</a-button>
-      </a-form-item>
-
-      <a-form-item>
-        <a-button danger :disabled="!canRun" :loading="loading" @click="reset">Reset</a-button>
       </a-form-item>
     </a-form>
 
@@ -176,9 +186,29 @@ onMounted(async () => {
       <a-table-column title="ID" dataIndex="id" />
       <a-table-column title="Doc Token" dataIndex="docToken" />
       <a-table-column title="Status" dataIndex="status" />
+      <a-table-column title="Doc Title">
+        <template #default="{ record }">
+          <template v-if="(record as any).docUrl">
+            <a :href="(record as any).docUrl" target="_blank">{{ (record as any).docTitle || (record as any).docToken }}</a>
+          </template>
+          <template v-else>{{ (record as any).docTitle || (record as any).docToken }}</template>
+        </template>
+      </a-table-column>
       <a-table-column title="Last Synced" dataIndex="lastSyncedAt" />
       <a-table-column title="Last Error" dataIndex="lastError" />
       <a-table-column title="Updated" dataIndex="updatedAt" />
+      <a-table-column title="Actions">
+        <template #default="{ record }">
+          <a-space :size="8">
+            <a-popconfirm title="Retry this sync task?" @confirm="retryRecord(record as any)">
+              <a-button size="small" :disabled="String((record as any).status ?? '').toLowerCase() === 'syncing'" :loading="loading">Retry</a-button>
+            </a-popconfirm>
+            <a-popconfirm title="Delete this sync record?" @confirm="deleteRecord(record as any)">
+              <a-button size="small" danger :loading="loading">Delete</a-button>
+            </a-popconfirm>
+          </a-space>
+        </template>
+      </a-table-column>
     </a-table>
 
     <a-modal v-model:open="createOpen" title="New Sync Task" :confirmLoading="loading" @ok="submitCreate">
@@ -188,8 +218,8 @@ onMounted(async () => {
             <a-select-option v-for="i in integrations" :key="i.id" :value="i.id"> {{ i.name }} (#{{ i.id }}) </a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item label="Doc Token" required>
-          <a-input v-model:value="createDocToken" placeholder="doccn..." />
+        <a-form-item label="Doc url" required>
+          <a-input v-model:value="createDocUrl" placeholder="https://..." />
         </a-form-item>
       </a-form>
     </a-modal>

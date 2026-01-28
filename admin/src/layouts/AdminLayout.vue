@@ -7,7 +7,10 @@ const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 
-const selectedKeys = computed(() => [route.path]);
+const selectedKeys = computed(() => {
+  if (route.path.startsWith("/platform/workspaces/") && route.path !== "/platform/workspaces") return ["/platform/members"];
+  return [route.path];
+});
 
 const openKeys = computed(() => {
   if (route.path.startsWith("/settings")) return ["settings"];
@@ -25,7 +28,18 @@ const displayName = computed(() => {
 const displayRole = computed(() => (auth.user?.isPlatformAdmin ? "Platform Admin" : "User"));
 
 const onMenuClick = (e: any) => {
-  router.push(e.key);
+  const key = String(e?.key ?? "");
+  if (key === "/platform/members") {
+    const id = String(route.params?.id ?? "").trim();
+    if (id) {
+      router.push(`/platform/workspaces/${id}`);
+    } else {
+      //current workspace
+      router.push(`/platform/workspaces/${auth.activeWorkspaceId}`);
+    }
+    return;
+  }
+  router.push(key);
 };
 
 const onUserMenuClick = (info: any) => {
@@ -45,7 +59,7 @@ const onUserMenuClick = (info: any) => {
       <div style="height: 32px; margin: 16px; color: #fff; font-weight: 600">larkflow</div>
       <a-menu theme="dark" mode="inline" :selectedKeys="selectedKeys" :openKeys="openKeys" @click="onMenuClick">
         <a-menu-item v-if="showPlatform" key="/platform/workspaces">Platform</a-menu-item>
-        <a-menu-item key="/members">Members</a-menu-item>
+        <a-menu-item  key="/platform/members">Members</a-menu-item>
         <a-menu-item key="/integrations">Integrations</a-menu-item>
         <a-menu-item key="/sync">Sync</a-menu-item>
         <a-menu-item key="/jobs">Jobs</a-menu-item>

@@ -14,7 +14,6 @@ const router = createRouter({
       children: [
         { path: "/platform/workspaces", component: () => import("@/views/PlatformWorkspacesView.vue") },
         { path: "/platform/workspaces/:id", component: () => import("@/views/PlatformWorkspaceMembersView.vue") },
-        { path: "/members", component: () => import("@/views/MembersView.vue") },
         { path: "/integrations", component: () => import("@/views/IntegrationsView.vue") },
         { path: "/sync", component: () => import("@/views/SyncView.vue") },
         { path: "/sync-records", redirect: "/sync" },

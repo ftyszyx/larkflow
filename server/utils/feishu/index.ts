@@ -120,7 +120,6 @@ export class FeishuClient {
 
   async downloadFeishuMedia(fileToken: string): Promise<Buffer> {
     const url = new URL(`/open-apis/drive/v1/medias/${fileToken}/download`, this.baseUrl);
-
     const res = await fetch(url.toString(), {
       method: "GET",
       headers: {
@@ -132,7 +131,6 @@ export class FeishuClient {
       const text = await res.text().catch(() => "");
       throw new Error(`Feishu media download error ${res.status}: ${text}`);
     }
-
     const ab = await res.arrayBuffer();
     return Buffer.from(ab);
   }

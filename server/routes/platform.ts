@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db.ts";
 import { systemSettings, users, workspaceMembers, workspaces } from "../drizzle/schema.ts";
 import { requirePlatformAdmin, requireUser } from "../middleware/auth.ts";
@@ -80,6 +80,48 @@ platformRoutes.get("/platform/workspaces", requireUser, requirePlatformAdmin, as
     .orderBy(desc(workspaces.updatedAt));
 
   return ok(c, data);
+});
+
+platformRoutes.patch("/platform/workspaces/:workspaceId", requireUser, requirePlatformAdmin, async (c) => {
+  const workspaceId = Number(c.req.param("workspaceId"));
+  if (!Number.isFinite(workspaceId)) return fail(c, 400, "invalid workspaceId");
+
+  const body = (await c.req.json().catch(() => null)) as null | { name?: string };
+  if (!body?.name || !body.name.trim()) return fail(c, 400, "name is required");
+
+  const updated = await db
+    .update(workspaces)
+    .set({ name: body.name.trim(), updatedAt: sql`now()` })
+    .where(eq(workspaces.id, workspaceId))
+    .returning({ id: workspaces.id, name: workspaces.name, updatedAt: workspaces.updatedAt, createdAt: workspaces.createdAt });
+
+  if (updated.length === 0) return fail(c, 404, "not found");
+  return ok(c, updated[0]);
+});
+
+platformRoutes.delete("/platform/workspaces/:workspaceId", requireUser, requirePlatformAdmin, async (c) => {
+  const workspaceId = Number(c.req.param("workspaceId"));
+  if (!Number.isFinite(workspaceId)) return fail(c, 400, "invalid workspaceId");
+
+  const deleted = await db.delete(workspaces).where(eq(workspaces.id, workspaceId)).returning({ id: workspaces.id });
+  if (deleted.length === 0) return fail(c, 404, "not found");
+  return ok(c, deleted[0]);
+});
+
+platformRoutes.delete("/platform/workspaces/:workspaceId/members/:userId", requireUser, requirePlatformAdmin, async (c) => {
+  const workspaceId = Number(c.req.param("workspaceId"));
+  if (!Number.isFinite(workspaceId)) return fail(c, 400, "invalid workspaceId");
+
+  const userId = Number(c.req.param("userId"));
+  if (!Number.isFinite(userId)) return fail(c, 400, "invalid userId");
+
+  const deleted = await db
+    .delete(workspaceMembers)
+    .where(and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, userId)))
+    .returning({ workspaceId: workspaceMembers.workspaceId, userId: workspaceMembers.userId });
+
+  if (deleted.length === 0) return fail(c, 404, "not found");
+  return ok(c, deleted[0]);
 });
 
 platformRoutes.post("/platform/workspaces", requireUser, requirePlatformAdmin, async (c) => {

@@ -7,6 +7,15 @@ import { message } from 'ant-design-vue'
 const loading = ref(false)
 const data = ref<Integration[]>([])
 
+const recordsPage = ref(1)
+const recordsPageSize = ref(20)
+const recordsTotal = computed(() => data.value.length)
+
+const tableData = computed(() => {
+  const start = (recordsPage.value - 1) * recordsPageSize.value
+  return data.value.slice(start, start + recordsPageSize.value)
+})
+
 const modalOpen = ref(false)
 const modalMode = ref<'create' | 'edit'>('create')
 const editingId = ref<number | null>(null)
@@ -26,9 +35,15 @@ const load = async () => {
   try {
     const res = await getIntegrations()
     data.value = res
+    recordsPage.value = 1
   } finally {
     loading.value = false
   }
+}
+
+const onRecordsPaginationChange = async (page: number, pageSize?: number) => {
+  recordsPage.value = page
+  if (pageSize) recordsPageSize.value = pageSize
 }
 
 const openCreate = () => {
@@ -140,7 +155,20 @@ onMounted(load)
       </a-space>
     </a-space>
 
-    <a-table :dataSource="data" :loading="loading" rowKey="id" size="small" :pagination="false">
+    <a-table
+      :dataSource="tableData"
+      :loading="loading"
+      rowKey="id"
+      size="small"
+      :pagination="{
+        current: recordsPage,
+        pageSize: recordsPageSize,
+        total: recordsTotal,
+        showSizeChanger: true,
+        onChange: onRecordsPaginationChange,
+        onShowSizeChange: onRecordsPaginationChange,
+      }"
+    >
       <a-table-column title="ID" dataIndex="id" />
       <a-table-column title="Name" dataIndex="name" />
       <a-table-column title="Platform" dataIndex="platformType" />

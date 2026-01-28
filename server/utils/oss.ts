@@ -50,6 +50,8 @@ type WorkspaceOssClient = {
   client: OSS;
   bucket: string;
   publicBaseUrl?: string;
+  region: string;
+  endpoint?: string;
 };
 
 const workspaceClientCache = new Map<number, WorkspaceOssClient>();
@@ -71,7 +73,13 @@ export const getWorkspaceOssClient = (workspaceId: number): Promise<WorkspaceOss
       bucket: cfg.bucket,
       endpoint: cfg.endpoint,
     });
-    const result: WorkspaceOssClient = { client, bucket: cfg.bucket, publicBaseUrl: cfg.publicBaseUrl };
+    const result: WorkspaceOssClient = {
+      client,
+      bucket: cfg.bucket,
+      publicBaseUrl: cfg.publicBaseUrl,
+      region: cfg.region,
+      endpoint: cfg.endpoint,
+    };
     workspaceClientCache.set(workspaceId, result);
     workspaceClientInit.delete(workspaceId);
     return result;
@@ -81,13 +89,30 @@ export const getWorkspaceOssClient = (workspaceId: number): Promise<WorkspaceOss
   return p;
 };
 
+const encodeObjectKey = (objectKey: string) => {
+  return objectKey
+    .split("/")
+    .map((seg) => encodeURIComponent(seg))
+    .join("/");
+};
+
+const getBucketObjectUrl = (cfg: { bucket: string; region: string; endpoint?: string; publicBaseUrl?: string }, objectKey: string) => {
+  const key = encodeObjectKey(objectKey);
+  if (cfg.publicBaseUrl) {
+    return `${cfg.publicBaseUrl.replace(/\/$/, "")}/${key}`;
+  }
+  // endpoint can be like: oss-cn-guangzhou.aliyuncs.com OR https://oss-cn-guangzhou.aliyuncs.com
+  const endpointHost = (cfg.endpoint ?? "").trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
+  const host = endpointHost ? (endpointHost.includes(cfg.bucket + ".") ? endpointHost : `${cfg.bucket}.${endpointHost}`) : `${cfg.bucket}.${cfg.region}.aliyuncs.com`;
+  return `https://${host}/${key}`;
+};
+
 export const putObject = async (workspaceId: number, objectKey: string, body: Uint8Array) => {
-  const { client, bucket, publicBaseUrl } = await getWorkspaceOssClient(workspaceId);
+  const { client, bucket } = await getWorkspaceOssClient(workspaceId);
   const putOptions: any = {};
   putOptions.headers = { 'x-oss-object-acl': 'public-read' };
-  await client.put(objectKey, body, putOptions);
-  const url = publicBaseUrl ? `${publicBaseUrl.replace(/\/$/, "")}/${objectKey}` : undefined;
-  return { bucket, objectKey, url };
+  const res = await client.put(objectKey, body, putOptions);
+  return { bucket, objectKey, url: res.url };
 };
 
 
@@ -102,7 +127,7 @@ export const checkObjectExists = async (workspaceId: number, objectKey: string) 
 };
 
 export const getFileUrl = async (workspaceId: number, objectKey: string) => {
-  const { client } = await getWorkspaceOssClient(workspaceId);
-  return client.getObjectUrl(objectKey);
+  const { bucket, publicBaseUrl, region, endpoint } = await getWorkspaceOssClient(workspaceId);
+  return getBucketObjectUrl({ bucket, publicBaseUrl, region, endpoint }, objectKey);
 };
 

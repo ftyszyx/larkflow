@@ -34,8 +34,8 @@ export const deleteIntegration = async (id: number) => {
   return (await request.delete(`${base()}/integrations/${id}`)) as { id: number }
 }
 
-export const triggerSync = async (integrationId: number, docToken: string) => {
-  return (await request.post(`${base()}/integrations/${integrationId}/sync`, { doc_token: docToken })) as any
+export const triggerSync = async (integrationId: number, docUrl: string) => {
+  return (await request.post(`${base()}/integrations/${integrationId}/sync`, { doc_url: docUrl })) as any
 }
 
 export const getSyncStatus = async (integrationId: number, docToken: string) => {
@@ -65,4 +65,8 @@ export const listWorkspaceSyncs = async (page = 1, pageSize = 20) => {
 
 export const listSyncs = async (integrationId: number, page = 1, pageSize = 20) => {
   return await listSyncRecords({ integrationId, page, pageSize })
+}
+
+export const deleteSyncRecord = async (syncId: number) => {
+  return (await request.delete(`${base()}/syncs/${syncId}`)) as { id: number }
 }

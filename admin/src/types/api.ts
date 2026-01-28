@@ -50,6 +50,7 @@ export type FeishuSpaceSync = {
   id: number
   integrationId: number
   docToken: string
+  docUrl: string
   status: string
   lastSyncedAt?: string | null
   lastError?: string | null
@@ -61,6 +62,7 @@ export type Article = {
   id: number
   workspaceId: number
   integrationId: number
+  sourceDocUrl: string
   sourceDocToken: string
   title: string
   status: string

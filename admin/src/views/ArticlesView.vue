@@ -72,6 +72,7 @@ onMounted(load)
     >
       <a-table-column title="ID" dataIndex="id" />
       <a-table-column title="Title" dataIndex="title" />
+      <a-table-column title="sourceDocUrl" dataIndex="sourceDocUrl" />
       <a-table-column title="Status" dataIndex="status" />
       <a-table-column title="Updated" dataIndex="updatedAt" />
     </a-table>

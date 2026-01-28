@@ -41,11 +41,9 @@ const onQueueChange = async () => {
   await load();
 };
 
-const onTableChange = async (pagination: any) => {
-  const nextCurrent = Number(pagination?.current ?? 1);
-  const nextPageSize = Number(pagination?.pageSize ?? pageSize.value);
-  currentPage.value = Number.isFinite(nextCurrent) && nextCurrent > 0 ? nextCurrent : 1;
-  pageSize.value = Number.isFinite(nextPageSize) && nextPageSize > 0 ? nextPageSize : pageSize.value;
+const onTablePaginationChange = async (page: number, nextPageSize?: number) => {
+  currentPage.value = page;
+  if (nextPageSize) pageSize.value = nextPageSize;
   await load();
 };
 
@@ -129,8 +127,15 @@ onBeforeUnmount(() => {
       :loading="loading"
       rowKey="id"
       size="small"
-      :pagination="{ current: currentPage, pageSize, total, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }"
-      @change="onTableChange"
+      :pagination="{
+        current: currentPage,
+        pageSize,
+        total,
+        showSizeChanger: true,
+        pageSizeOptions: ['10', '20', '50', '100', '200'],
+        onChange: onTablePaginationChange,
+        onShowSizeChange: onTablePaginationChange,
+      }"
     >
       <a-table-column title="ID" dataIndex="id" />
       <a-table-column title="Queue" dataIndex="queue" />
