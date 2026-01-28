@@ -1,48 +1,52 @@
 <script setup lang="ts">
-import { listArticles } from '@/apis/articles'
-import type { Article } from '@/types/api'
-import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { listArticles } from "@/apis/articles";
+import type { Article } from "@/types/api";
+import { articleStatus } from "@/types/const";
+import { onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 
-const router = useRouter()
+const router = useRouter();
 
-const status = ref<string | undefined>(undefined)
-const pageSize = ref(20)
-const currentPage = ref(1)
-const total = ref(0)
+const status = ref<string | undefined>(undefined);
+const pageSize = ref(20);
+const currentPage = ref(1);
+const total = ref(0);
 
-const loading = ref(false)
-const data = ref<Article[]>([])
+const loading = ref(false);
+const data = ref<Article[]>([]);
 
 const load = async () => {
-  loading.value = true
+  loading.value = true;
   try {
-    const res = await listArticles({ status: status.value, page: currentPage.value, page_size: pageSize.value })
-    data.value = res.items
-    total.value = res.total
+    const res = await listArticles({ status: status.value, page: currentPage.value, page_size: pageSize.value });
+    data.value = res.items;
+    total.value = res.total;
   } finally {
-    loading.value = false
+    loading.value = false;
   }
-}
+  for (const item of Object.entries(articleStatus)) {
+    console.log("item", item);
+  }
+};
 
 const onStatusChange = async () => {
-  currentPage.value = 1
-  await load()
-}
+  currentPage.value = 1;
+  await load();
+};
 
 const onTableChange = async (pagination: any) => {
-  const nextCurrent = Number(pagination?.current ?? 1)
-  const nextPageSize = Number(pagination?.pageSize ?? pageSize.value)
-  currentPage.value = Number.isFinite(nextCurrent) && nextCurrent > 0 ? nextCurrent : 1
-  pageSize.value = Number.isFinite(nextPageSize) && nextPageSize > 0 ? nextPageSize : pageSize.value
-  await load()
-}
+  const nextCurrent = Number(pagination?.current ?? 1);
+  const nextPageSize = Number(pagination?.pageSize ?? pageSize.value);
+  currentPage.value = Number.isFinite(nextCurrent) && nextCurrent > 0 ? nextCurrent : 1;
+  pageSize.value = Number.isFinite(nextPageSize) && nextPageSize > 0 ? nextPageSize : pageSize.value;
+  await load();
+};
 
 const onRowClick = (record: Article) => {
-  router.push(`/articles/${record.id}`)
-}
+  router.push(`/articles/${record.id}`);
+};
 
-onMounted(load)
+onMounted(load);
 </script>
 
 <template>
@@ -54,10 +58,9 @@ onMounted(load)
 
     <a-space :size="12" style="width: 100%">
       <a-select allowClear style="width: 160px" v-model:value="status" placeholder="all" @change="onStatusChange">
-        <a-select-option value="draft">draft</a-select-option>
-        <a-select-option value="ready">ready</a-select-option>
-        <a-select-option value="published">published</a-select-option>
-        <a-select-option value="archived">archived</a-select-option>
+        <a-select-option v-for="[k, v] in Object.entries(articleStatus)" :key="k" :value="v">
+          {{ $t(`const.articleStatus.${v}`) }}
+        </a-select-option>
       </a-select>
     </a-space>
 
@@ -70,11 +73,11 @@ onMounted(load)
       @change="onTableChange"
       :customRow="(record: unknown) => ({ onClick: () => onRowClick(record as any) })"
     >
-      <a-table-column title="ID" dataIndex="id" />
-      <a-table-column title="Title" dataIndex="title" />
-      <a-table-column title="sourceDocUrl" dataIndex="sourceDocUrl" />
-      <a-table-column title="Status" dataIndex="status" />
-      <a-table-column title="Updated" dataIndex="updatedAt" />
+      <a-table-column :title="$t('article.ID')" dataIndex="id" />
+      <a-table-column :title="$t('article.Title')" dataIndex="title" />
+      <a-table-column :title="$t('article.sourceDocUrl')" dataIndex="sourceDocUrl" />
+      <a-table-column :title="$t('article.Status')" dataIndex="status" />
+      <a-table-column :title="$t('article.Updated')" dataIndex="updatedAt" />
     </a-table>
   </a-space>
 </template>

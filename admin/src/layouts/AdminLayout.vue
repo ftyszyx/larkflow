@@ -2,10 +2,12 @@
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
+import { useLocaleStore, type SupportedLocale } from "@/stores/locale";
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
+const localeStore = useLocaleStore();
 
 const selectedKeys = computed(() => {
   if (route.path.startsWith("/platform/workspaces/") && route.path !== "/platform/workspaces") return ["/platform/members"];
@@ -51,6 +53,13 @@ const onUserMenuClick = (info: any) => {
     router.push({ path: "/select-workspace", query: { force: "1" } });
   }
 };
+
+const onLocaleMenuClick = (info: any) => {
+  const key = String(info?.key ?? "") as SupportedLocale;
+  if (key === "en" || key === "zh-cn") {
+    localeStore.setLocale(key);
+  }
+};
 </script>
 
 <template>
@@ -59,7 +68,7 @@ const onUserMenuClick = (info: any) => {
       <div style="height: 32px; margin: 16px; color: #fff; font-weight: 600">larkflow</div>
       <a-menu theme="dark" mode="inline" :selectedKeys="selectedKeys" :openKeys="openKeys" @click="onMenuClick">
         <a-menu-item v-if="showPlatform" key="/platform/workspaces">Platform</a-menu-item>
-        <a-menu-item  key="/platform/members">Members</a-menu-item>
+        <a-menu-item key="/platform/members">Members</a-menu-item>
         <a-menu-item key="/integrations">Integrations</a-menu-item>
         <a-menu-item key="/sync">Sync</a-menu-item>
         <a-menu-item key="/jobs">Jobs</a-menu-item>
@@ -75,19 +84,33 @@ const onUserMenuClick = (info: any) => {
       <a-layout-header style="background: #fff; padding: 0 16px">
         <div style="display: flex; align-items: center; justify-content: space-between; height: 100%">
           <div style="color: #666">Workspace: {{ auth.activeWorkspaceId || "-" }}</div>
-          <a-dropdown placement="bottomRight" :trigger="['click']">
-            <span style="display: flex; align-items: center; gap: 8px; cursor: pointer">
-              <a-avatar size="small">{{ displayName.slice(0, 1).toUpperCase() }}</a-avatar>
-              <span style="color: #333">{{ displayName }}</span>
-              <span style="color: #999; font-size: 12px">({{ displayRole }})</span>
-            </span>
-            <template #overlay>
-              <a-menu @click="onUserMenuClick">
-                <a-menu-item key="switch-workspace">Switch Workspace</a-menu-item>
-                <a-menu-item key="logout">Logout</a-menu-item>
-              </a-menu>
-            </template>
-          </a-dropdown>
+          <div style="display: flex; align-items: center; gap: 12px">
+            <a-dropdown placement="bottomRight" :trigger="['click']">
+              <span style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: #333">
+                {{ $t("common.language") }}: {{ localeStore.current === "zh-cn" ? $t("common.zhCn") : $t("common.en") }}
+              </span>
+              <template #overlay>
+                <a-menu @click="onLocaleMenuClick">
+                  <a-menu-item key="zh-cn">{{ $t("common.zhCn") }}</a-menu-item>
+                  <a-menu-item key="en">{{ $t("common.en") }}</a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
+
+            <a-dropdown placement="bottomRight" :trigger="['click']">
+              <span style="display: flex; align-items: center; gap: 8px; cursor: pointer">
+                <a-avatar size="small">{{ displayName.slice(0, 1).toUpperCase() }}</a-avatar>
+                <span style="color: #333">{{ displayName }}</span>
+                <span style="color: #999; font-size: 12px">({{ displayRole }})</span>
+              </span>
+              <template #overlay>
+                <a-menu @click="onUserMenuClick">
+                  <a-menu-item key="switch-workspace">{{ $t("common.switchWorkspace") }}</a-menu-item>
+                  <a-menu-item key="logout">{{ $t("common.logout") }}</a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
+          </div>
         </div>
       </a-layout-header>
       <a-layout-content style="margin: 16px">

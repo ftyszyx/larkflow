@@ -1,75 +1,77 @@
 <script setup lang="ts">
-import { getArticle, listPublications, publishArticle } from '@/apis/articles'
-import { getIntegrations } from '@/apis/integrations'
-import type { Article, ArticlePublication, Integration } from '@/types/api'
-import { message } from 'ant-design-vue'
-import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
-import MarkdownIt from 'markdown-it'
-import { PlatformType } from '@/types/const'
+import { getArticle, listPublications, publishArticle } from "@/apis/articles";
+import { getIntegrations } from "@/apis/integrations";
+import type { Article, ArticlePublication, Integration } from "@/types/api";
+import { message } from "ant-design-vue";
+import { computed, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
+import MarkdownIt from "markdown-it";
+import { PlatformType } from "@/types/const";
+import { useI18n } from "vue-i18n";
 
-const route = useRoute()
-const id = Number(route.params.id)
+const route = useRoute();
+const id = Number(route.params.id);
 
-const loading = ref(false)
-const article = ref<Article | null>(null)
+const loading = ref(false);
+const article = ref<Article | null>(null);
+const { t } = useI18n();
 
-const can_publish_integrations = ref<Integration[]>([])
-const publishIntegrationId = ref<number | null>(null)
+const can_publish_integrations = ref<Integration[]>([]);
+const publishIntegrationId = ref<number | null>(null);
 
-const pubs = ref<ArticlePublication[]>([])
-const pubsLoading = ref(false)
+const pubs = ref<ArticlePublication[]>([]);
+const pubsLoading = ref(false);
 
 const md = new MarkdownIt({
   html: true,
   linkify: true,
   breaks: true,
-})
+});
 
 const contentHtml = computed(() => {
-  const raw = article.value?.contentMdFinal ?? ''
-  return md.render(raw)
-})
+  const raw = article.value?.contentMdFinal ?? "";
+  return md.render(raw);
+});
 
-const previewOpen = ref(false)
+const previewOpen = ref(false);
 
-const canPublish = computed(() => !!publishIntegrationId.value && !!article.value)
+const canPublish = computed(() => !!publishIntegrationId.value && !!article.value);
 
 const load = async () => {
-  loading.value = true
+  loading.value = true;
   try {
-    const res = await getArticle(id)
-    article.value = res
+    const res = await getArticle(id);
+    article.value = res;
   } finally {
-    loading.value = false
+    loading.value = false;
   }
-}
+};
 
 const loadIntegrations = async () => {
-  const res = await getIntegrations()
-  can_publish_integrations.value = res.filter((i) => i.platformType !== PlatformType.Feishu)
-}
+  const res = await getIntegrations();
+  can_publish_integrations.value = res.filter((i) => i.platformType !== PlatformType.Feishu);
+};
 
 const loadPubs = async () => {
-  pubsLoading.value = true
+  pubsLoading.value = true;
   try {
-    const res = await listPublications(id)
-    pubs.value = res
+    const res = await listPublications(id);
+    pubs.value = res;
   } finally {
-    pubsLoading.value = false
+    pubsLoading.value = false;
   }
-}
+};
 
 const doPublish = async () => {
-  if (!canPublish.value) return
-  await publishArticle(id, publishIntegrationId.value as number)
-  message.success('publish job created')
-  await loadPubs()
-}
+  if (!canPublish.value) return;
+  await publishArticle(id, publishIntegrationId.value as number);
+  message.success(t("article.publishSuccess"));
+  await loadPubs();
+};
 
 onMounted(async () => {
-  await Promise.all([load(), loadIntegrations(), loadPubs()])
-})
+  await Promise.all([load(), loadIntegrations(), loadPubs()]);
+});
 </script>
 
 <template>
@@ -88,18 +90,18 @@ onMounted(async () => {
         </template>
         <template v-else>-</template>
       </a-descriptions-item>
-      <a-descriptions-item label="source doc url"><a :href="article.sourceDocUrl" target="_blank">{{ article.sourceDocUrl }}</a></a-descriptions-item>
+      <a-descriptions-item label="source doc url"
+        ><a :href="article.sourceDocUrl" target="_blank">{{ article.sourceDocUrl }}</a></a-descriptions-item
+      >
       <a-descriptions-item label="Doc Token">{{ article.sourceDocToken }}</a-descriptions-item>
       <a-descriptions-item label="Updated">{{ article.updatedAt }}</a-descriptions-item>
     </a-descriptions>
 
-    <a-card title="Publish" size="small">
+    <a-card :title="$t('article_detail.publish')" size="small">
       <a-form layout="inline">
-        <a-form-item label="Integration">
-          <a-select style="width: 260px" v-model:value="publishIntegrationId" placeholder="Select integration">
-            <a-select-option v-for="i in can_publish_integrations" :key="i.id" :value="i.id">
-              {{ i.name }} (#{{ i.id }})
-            </a-select-option>
+        <a-form-item :label="$t('article_detail.integration')">
+          <a-select style="width: 260px" v-model:value="publishIntegrationId" :placeholder="$t('article_detail.select_integration')">
+            <a-select-option v-for="i in can_publish_integrations" :key="i.id" :value="i.id"> {{ i.name }} (#{{ i.id }}) </a-select-option>
           </a-select>
         </a-form-item>
         <a-form-item>
@@ -117,7 +119,7 @@ onMounted(async () => {
       </a-table>
     </a-card>
 
-    <a-card title="Content (final markdown)" size="small">
+    <a-card :title="$t('article_detail.content')" size="small">
       <div v-if="article" style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px">
         <div style="min-width: 0">
           <div style="color: #999; font-size: 12px; margin-bottom: 6px">Markdown</div>
@@ -130,16 +132,32 @@ onMounted(async () => {
           </a-space>
           <div
             v-html="contentHtml"
-            style="border: 1px solid #f0f0f0; border-radius: 6px; padding: 12px; height: 378px; overflow: auto; overflow-wrap: anywhere; word-break: break-word"
+            style="
+              border: 1px solid #f0f0f0;
+              border-radius: 6px;
+              padding: 12px;
+              height: 378px;
+              overflow: auto;
+              overflow-wrap: anywhere;
+              word-break: break-word;
+            "
           />
         </div>
       </div>
     </a-card>
 
-    <a-modal v-model:open="previewOpen" title="Markdown Preview" :footer="null" width="90%">
+    <a-modal v-model:open="previewOpen" :title="$t('article_detail.markdown_preview')" :footer="null" width="90%">
       <div
         v-html="contentHtml"
-        style="height: 80vh; overflow: auto; border: 1px solid #f0f0f0; border-radius: 6px; padding: 12px; overflow-wrap: anywhere; word-break: break-word"
+        style="
+          height: 80vh;
+          overflow: auto;
+          border: 1px solid #f0f0f0;
+          border-radius: 6px;
+          padding: 12px;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        "
       />
     </a-modal>
   </a-space>
