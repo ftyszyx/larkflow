@@ -215,6 +215,8 @@ export const articles = pgTable(
     sourceDocToken: text("source_doc_token").notNull(),
     sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true, mode: "string" }),
     title: text().notNull(),
+    titleAi: text("title_ai"),
+    titleFinal: text("title_final"),
     // You can use { mode: "bigint" } if numbers are exceeding js number limitations
     coverAssetId: bigint("cover_asset_id", { mode: "number" }),
     coverUrl: text("cover_url"),
@@ -260,6 +262,60 @@ export const articles = pgTable(
       name: "articles_integration_id_integrations_id_fk",
     }).onDelete("cascade"),
     check("articles_status_check", sql`status = ANY (ARRAY['draft'::text, 'ready'::text, 'published'::text, 'archived'::text])`),
+  ],
+);
+
+export const articleCovers = pgTable(
+  "article_covers",
+  {
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    id: bigint({ mode: "number" })
+      .primaryKey()
+      .generatedAlwaysAsIdentity({ name: "article_covers_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    workspaceId: bigint("workspace_id", { mode: "number" }).notNull(),
+    // You can use { mode: "bigint" } if numbers are exceeding js number limitations
+    articleId: bigint("article_id", { mode: "number" }).notNull(),
+    platformType: integer("platform_type").notNull(),
+    presetKey: text("preset_key").notNull(),
+    width: integer().notNull(),
+    height: integer().notNull(),
+    prompt: text(),
+    provider: text(),
+    objectKey: text("object_key"),
+    url: text().notNull(),
+    isActive: boolean("is_active").default(false).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_article_covers_article_created_at").using(
+      "btree",
+      table.articleId.asc().nullsLast().op("int8_ops"),
+      table.createdAt.asc().nullsLast().op("timestamptz_ops"),
+    ),
+    index("idx_article_covers_article_platform_preset").using(
+      "btree",
+      table.articleId.asc().nullsLast().op("int8_ops"),
+      table.platformType.asc().nullsLast().op("int4_ops"),
+      table.presetKey.asc().nullsLast().op("text_ops"),
+    ),
+    uniqueIndex("uq_article_covers_active").using(
+      "btree",
+      table.articleId.asc().nullsLast().op("int8_ops"),
+      table.platformType.asc().nullsLast().op("int4_ops"),
+      table.presetKey.asc().nullsLast().op("text_ops"),
+    ).where(sql`${table.isActive} = true`),
+    foreignKey({
+      columns: [table.articleId],
+      foreignColumns: [articles.id],
+      name: "article_covers_article_id_articles_id_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId],
+      foreignColumns: [workspaces.id],
+      name: "article_covers_workspace_id_workspaces_id_fk",
+    }).onDelete("cascade"),
   ],
 );
 

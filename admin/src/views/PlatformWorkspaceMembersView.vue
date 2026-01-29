@@ -8,9 +8,10 @@ import {
   platformUpsertWorkspaceMember,
   type PlatformWorkspaceMember,
 } from '@/apis/platform'
+import { useI18n } from 'vue-i18n'
 
 const route = useRoute()
-
+const { t } = useI18n()
 const workspaceId = computed(() => Number(route.params.id))
 
 const loading = ref(false)
@@ -46,7 +47,7 @@ const dataSource = computed(() => {
 
 const load = async () => {
   if (!Number.isFinite(workspaceId.value)) {
-    message.error('invalid workspace id')
+    message.error(t('error.invalidWorkspaceId'))
     return
   }
 
@@ -94,11 +95,11 @@ const openInvite = () => {
 
 const submitInvite = async () => {
   if (!Number.isFinite(workspaceId.value)) {
-    message.error('invalid workspace id')
+    message.error(t('error.invalidWorkspaceId'))
     return
   }
   if (!inviteEmail.value.trim()) {
-    message.error('email is required')
+    message.error(t('error.emailRequired'))
     return
   }
 
@@ -136,11 +137,11 @@ const openEdit = (row: PlatformWorkspaceMember) => {
 
 const submitEdit = async () => {
   if (!Number.isFinite(workspaceId.value)) {
-    message.error('invalid workspace id')
+    message.error(t('error.invalidWorkspaceId'))
     return
   }
   if (!editEmail.value.trim()) {
-    message.error('email is required')
+    message.error(t('error.emailRequired'))
     return
   }
 
@@ -152,7 +153,7 @@ const submitEdit = async () => {
       role: editRole.value,
       password: editPassword.value.trim() ? editPassword.value : undefined,
     })
-    message.success('member updated')
+    message.success(t('success.memberUpdated'))
     editOpen.value = false
     await load()
   } finally {
@@ -162,7 +163,7 @@ const submitEdit = async () => {
 
 const doDelete = async (row: PlatformWorkspaceMember) => {
   if (!Number.isFinite(workspaceId.value)) {
-    message.error('invalid workspace id')
+    message.error(t('error.invalidWorkspaceId'))
     return
   }
 
@@ -214,17 +215,17 @@ onMounted(load)
           onShowSizeChange: onRecordsPaginationChange,
         }"
       >
-        <a-table-column title="UserId" dataIndex="userId" />
-        <a-table-column title="Email" dataIndex="email" />
-        <a-table-column title="Name" dataIndex="name" />
-        <a-table-column title="Role" dataIndex="role" />
-        <a-table-column title="Created" dataIndex="createdAt" />
-        <a-table-column title="Actions">
+        <a-table-column :title="$t('platformWorkspaceMembers.userId')" dataIndex="userId" />
+        <a-table-column :title="$t('platformWorkspaceMembers.email')" dataIndex="email" />
+        <a-table-column :title="$t('platformWorkspaceMembers.name')" dataIndex="name" />
+        <a-table-column :title="$t('platformWorkspaceMembers.role')" dataIndex="role" />
+        <a-table-column :title="$t('platformWorkspaceMembers.createdAt')" dataIndex="createdAt" />
+        <a-table-column :title="$t('platformWorkspaceMembers.actions')">
           <template #default="{ record }">
             <a-space :size="8">
-              <a-button size="small" @click.stop="openEdit(record as any)">Edit</a-button>
-              <a-popconfirm title="Delete this member from workspace?" @confirm="doDelete(record as any)">
-                <a-button size="small" danger @click.stop>Delete</a-button>
+              <a-button size="small" @click.stop="openEdit(record as any)">{{ $t('platformWorkspaceMembers.edit') }}</a-button>
+              <a-popconfirm :title="$t('platformWorkspaceMembers.deleteConfirm')" @confirm="doDelete(record as any)">
+                <a-button size="small" danger @click.stop>{{ $t('platformWorkspaceMembers.delete') }}</a-button>
               </a-popconfirm>
             </a-space>
           </template>
@@ -270,7 +271,7 @@ onMounted(load)
             <a-select-option value="viewer">viewer</a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item label="Password">
+        <a-form-item :label="$t('platformWorkspaceMembers.password')">
           <a-input-password v-model:value="invitePassword" placeholder="Optional" />
         </a-form-item>
       </a-form>

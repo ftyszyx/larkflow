@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { listArticles } from "@/apis/articles";
+import { deleteArticle, listArticles } from "@/apis/articles";
 import type { Article } from "@/types/api";
 import { articleStatus } from "@/types/const";
+import { message } from "ant-design-vue";
 import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 
@@ -46,6 +47,12 @@ const onRowClick = (record: Article) => {
   router.push(`/articles/${record.id}`);
 };
 
+const onDelete = async (record: Article) => {
+  await deleteArticle(record.id);
+  message.success("deleted");
+  await load();
+};
+
 onMounted(load);
 </script>
 
@@ -78,6 +85,18 @@ onMounted(load);
       <a-table-column :title="$t('article.sourceDocUrl')" dataIndex="sourceDocUrl" />
       <a-table-column :title="$t('article.Status')" dataIndex="status" />
       <a-table-column :title="$t('article.Updated')" dataIndex="updatedAt" />
+      <a-table-column :title="$t('common.actions')" key="actions">
+        <template #default="{ record }">
+          <a-popconfirm
+            :title="$t('article.deleteConfirm')"
+            :ok-text="$t('common.delete')"
+            :cancel-text="$t('common.cancel')"
+            @confirm="(e: Event) => { e?.stopPropagation?.(); onDelete(record as Article); }"
+          >
+            <a-button danger size="small" @click="(e: Event) => e.stopPropagation()">{{ $t('common.delete') }}</a-button>
+          </a-popconfirm>
+        </template>
+      </a-table-column>
     </a-table>
   </a-space>
 </template>

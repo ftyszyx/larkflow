@@ -21,3 +21,12 @@ https://github.com/larksuite/node-sdk
 
 
  
+## ai接入
+1. 针对不同平台需要的封面大小，生成不同的封面
+2. ai能总结更好的文章标题
+3. ai能润色文章内容
+
+
+
+
+

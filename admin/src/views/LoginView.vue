@@ -44,7 +44,7 @@ const onSubmit = async () => {
         </a-form-item>
       </a-form>
       <div style="color: #999; font-size: 12px">
-        This instance uses invitation-based onboarding. If you don't have an account, ask your workspace admin for an invite.
+        {{ $t("login.invitationBasedOnboarding") }}
       </div>
     </a-card>
   </div>

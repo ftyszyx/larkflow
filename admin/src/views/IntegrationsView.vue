@@ -4,7 +4,9 @@ import type { Integration } from "@/types/api";
 import { PlatformType, Status } from "@/types/const";
 import { computed, onMounted, ref } from "vue";
 import { message } from "ant-design-vue";
+import { useI18n } from "vue-i18n";
 
+const { t } = useI18n();
 const loading = ref(false);
 const data = ref<Integration[]>([]);
 
@@ -102,7 +104,7 @@ const submit = async () => {
   if (isFeishu.value) {
     const workspaceId = formFeishuWorkspaceId.value.trim();
     if (!workspaceId) {
-      message.error("workspaceId is required for feishu");
+      message.error(t("integration.workspaceIdRequired"));
       return;
     }
     config.workspaceId = workspaceId;
@@ -119,11 +121,11 @@ const submit = async () => {
   try {
     if (modalMode.value === "create") {
       await createIntegration(payload);
-      message.success("created");
+      message.success(t("integration.created"));
     } else {
       if (!editingId.value) return;
       await updateIntegration(editingId.value, payload);
-      message.success("updated");
+      message.success(t("integration.updated"));
     }
     modalOpen.value = false;
     await load();
@@ -136,7 +138,7 @@ const onDelete = async (row: Integration) => {
   loading.value = true;
   try {
     await deleteIntegration(row.id);
-    message.success("deleted");
+    message.success(t("integration.deleted"));
     await load();
   } finally {
     loading.value = false;
@@ -170,16 +172,16 @@ onMounted(load);
         onShowSizeChange: onRecordsPaginationChange,
       }"
     >
-      <a-table-column title="ID" dataIndex="id" />
-      <a-table-column title="Name" dataIndex="name" />
-      <a-table-column title="Platform" dataIndex="platformType" />
-      <a-table-column title="Status" dataIndex="status" />
-      <a-table-column title="Actions">
+      <a-table-column :title="$t('integration.id')" dataIndex="id" />
+      <a-table-column :title="$t('integration.name')" dataIndex="name" />
+      <a-table-column :title="$t('integration.platformType')" dataIndex="platformType" />
+      <a-table-column :title="$t('integration.status')" dataIndex="status" />
+      <a-table-column :title="$t('integration.actions')">
         <template #default="{ record }">
           <a-space :size="8">
-            <a-button size="small" @click="openEdit(record as any)">Edit</a-button>
-            <a-popconfirm title="Delete this integration?" @confirm="onDelete(record as any)">
-              <a-button size="small" danger>Delete</a-button>
+            <a-button size="small" @click="openEdit(record as any)">{{ $t("integration.edit") }}</a-button>
+            <a-popconfirm :title="$t('integration.deleteConfirm')" @confirm="onDelete(record as any)">
+              <a-button size="small" danger>{{ $t("integration.delete") }}</a-button>
             </a-popconfirm>
           </a-space>
         </template>
@@ -188,11 +190,11 @@ onMounted(load);
 
     <a-modal v-model:open="modalOpen" :title="modalMode === 'create' ? 'New Integration' : 'Edit Integration'" :confirmLoading="loading" @ok="submit">
       <a-form layout="vertical">
-        <a-form-item label="Name">
+        <a-form-item :label="$t('integration.name')">
           <a-input v-model:value="formName" />
         </a-form-item>
 
-        <a-form-item label="Platform Type">
+        <a-form-item :label="$t('integration.platformType')">
           <a-select v-model:value="formPlatformType" style="width: 100%">
             <a-select-option
               v-for="[key, value] in Object.entries(PlatformType).filter(([k]) => Number.isNaN(Number(k)))"
@@ -203,7 +205,7 @@ onMounted(load);
           </a-select>
         </a-form-item>
 
-        <a-form-item label="Status">
+        <a-form-item :label="$t('integration.status')" v-if="modalMode!='create'">
           <a-select v-model:value="formStatus">
             <a-select-option v-for="[key, value] in Object.entries(Status).filter(([k]) => Number.isNaN(Number(k)))" :key="key" :value="value">
               {{ $t(`const.status.${key}`) }}
@@ -211,19 +213,19 @@ onMounted(load);
           </a-select>
         </a-form-item>
 
-        <a-form-item label="Base URL">
+        <!-- <a-form-item :label="$t('integration.baseUrl')">
           <a-input v-model:value="formBaseUrl" placeholder="Leave empty to use default" />
-        </a-form-item>
+        </a-form-item> -->
 
-        <a-form-item label="App ID" required>
+        <a-form-item :label="$t('integration.appId')" required>
           <a-input v-model:value="formAppId" />
         </a-form-item>
 
-        <a-form-item label="App Secret" required>
+        <a-form-item :label="$t('integration.appSecret')" required>
           <a-input-password v-model:value="formAppSecret" />
         </a-form-item>
 
-        <a-form-item v-if="isFeishu" label="Feishu Workspace ID" required>
+        <a-form-item v-if="isFeishu" :label="$t('integration.feishuWorkspaceId')" required>
           <a-input v-model:value="formFeishuWorkspaceId" />
         </a-form-item>
       </a-form>

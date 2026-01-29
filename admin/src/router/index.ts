@@ -22,6 +22,7 @@ const router = createRouter({
         { path: "/articles/:id", component: () => import("@/views/ArticleDetailView.vue") },
         { path: "/settings", redirect: "/settings/oss" },
         { path: "/settings/oss", component: () => import("@/views/SettingsOssView.vue") },
+        { path: "/settings/ai", component: () => import("@/views/SettingsAiView.vue") },
         { path: "/settings/worker", component: () => import("@/views/SettingsWorkerView.vue") },
       ],
     },

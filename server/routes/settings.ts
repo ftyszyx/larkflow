@@ -5,6 +5,7 @@ import { workspaceSettings } from "../drizzle/schema.ts";
 import { requireUser } from "../middleware/auth.ts";
 import { requireRole, requireWorkspace, requireWorkspaceMember } from "../middleware/workspace.ts";
 import type { AppEnv } from "../types.ts";
+import { parseWorkspaceAiSettings, type WorkspaceAiSettingsValue } from "../utils/ai_settings.ts";
 import { fail, ok } from "../utils/response.ts";
 
 export const settingsRoutes = new Hono<AppEnv>();
@@ -19,6 +20,7 @@ export type WorkspaceOssSettingsValue = {
 };
 
 const OSS_KEY = "aliyun_oss";
+const AI_KEY = "ai";
 
 const isObjectRecord = (value: unknown): value is Record<string, unknown> => {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -99,6 +101,63 @@ settingsRoutes.put(
 
     const value = inserted[0]?.value ?? null;
     const normalized = value ? parseOssSettings(value) : null;
+    return ok(c, normalized, 200);
+  },
+);
+
+settingsRoutes.get(
+  "/settings/ai",
+  requireUser,
+  requireWorkspace,
+  requireWorkspaceMember,
+  requireRole(["owner", "admin"]),
+  async (c) => {
+    const workspaceId = c.get("workspaceId") as number;
+
+    const rows = await db
+      .select({ value: workspaceSettings.value })
+      .from(workspaceSettings)
+      .where(and(eq(workspaceSettings.workspaceId, workspaceId), eq(workspaceSettings.key, AI_KEY)))
+      .limit(1);
+
+    const value = rows[0]?.value ?? null;
+    const parsed = value ? parseWorkspaceAiSettings(value) : null;
+
+    return ok(c, parsed);
+  },
+);
+
+settingsRoutes.put(
+  "/settings/ai",
+  requireUser,
+  requireWorkspace,
+  requireWorkspaceMember,
+  requireRole(["owner", "admin"]),
+  async (c) => {
+    const workspaceId = c.get("workspaceId") as number;
+
+    const body = (await c.req.json().catch(() => null)) as null | { value?: unknown };
+    const parsed = parseWorkspaceAiSettings(body?.value);
+    if (!parsed) return fail(c, 400, "invalid ai config");
+
+    const inserted = await db
+      .insert(workspaceSettings)
+      .values({
+        workspaceId,
+        key: AI_KEY,
+        value: parsed,
+      })
+      .onConflictDoUpdate({
+        target: [workspaceSettings.workspaceId, workspaceSettings.key],
+        set: {
+          value: parsed,
+          updatedAt: sql`now()`,
+        },
+      })
+      .returning({ value: workspaceSettings.value });
+
+    const value = inserted[0]?.value ?? null;
+    const normalized = value ? (parseWorkspaceAiSettings(value) as WorkspaceAiSettingsValue | null) : null;
     return ok(c, normalized, 200);
   },
 );

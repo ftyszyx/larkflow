@@ -65,6 +65,8 @@ export type Article = {
   sourceDocUrl: string
   sourceDocToken: string
   title: string
+  titleAi?: string | null
+  titleFinal?: string | null
   status: string
   coverUrl?: string | null
   contentMd: string

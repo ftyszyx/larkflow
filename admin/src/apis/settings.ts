@@ -16,6 +16,21 @@ export type WorkerSettingsValue = {
   lockSeconds: number
 }
 
+export type WorkspaceAiSettingsValue = {
+  grsChat?: {
+    apiKey?: string
+    baseUrl?: string
+    model?: string
+  }
+  nanoBanana?: {
+    apiKey?: string
+    baseUrl?: string
+    model?: string
+    imageSize?: '1K' | '2K' | '4K'
+    aspectRatio?: string
+  }
+}
+
 const base = () => {
   const auth = useAuthStore()
   const wid = auth.activeWorkspaceId?.trim()
@@ -37,4 +52,12 @@ export const getWorkerSettings = async () => {
 
 export const updateWorkerSettings = async (value: WorkerSettingsValue) => {
   return (await request.put('/platform/settings/worker', { value })) as WorkerSettingsValue | null
+}
+
+export const getAiSettings = async () => {
+  return (await request.get(`${base()}/settings/ai`)) as WorkspaceAiSettingsValue | null
+}
+
+export const updateAiSettings = async (value: WorkspaceAiSettingsValue) => {
+  return (await request.put(`${base()}/settings/ai`, { value })) as WorkspaceAiSettingsValue | null
 }

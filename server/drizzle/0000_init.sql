@@ -76,6 +76,8 @@ CREATE TABLE "articles" (
 	"source_doc_token" text NOT NULL,
 	"source_updated_at" timestamptz,
 	"title" text NOT NULL,
+	"title_ai" text,
+	"title_final" text,
 	"cover_asset_id" bigint,
 	"cover_url" text,
 	"content_md" text DEFAULT '' NOT NULL,
@@ -85,6 +87,24 @@ CREATE TABLE "articles" (
 	"updated_at" timestamptz DEFAULT now() NOT NULL,
 	"deleted_at" timestamptz,
 	CONSTRAINT "articles_status_check" CHECK ("status" IN ('draft', 'ready', 'published', 'archived'))
+);
+
+-- 文章封面历史表（按平台+预设尺寸存多张，支持激活其中一张）
+CREATE TABLE "article_covers" (
+	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "article_covers_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
+	"workspace_id" bigint NOT NULL,
+	"article_id" bigint NOT NULL,
+	"platform_type" integer NOT NULL,
+	"preset_key" text NOT NULL,
+	"width" integer NOT NULL,
+	"height" integer NOT NULL,
+	"prompt" text,
+	"provider" text,
+	"object_key" text,
+	"url" text NOT NULL,
+	"is_active" boolean DEFAULT false NOT NULL,
+	"created_at" timestamptz DEFAULT now() NOT NULL,
+	"updated_at" timestamptz DEFAULT now() NOT NULL
 );
 
 -- 文章附件表
@@ -191,6 +211,13 @@ CREATE INDEX "idx_articles_workspace_updated_at" ON "articles" USING btree ("wor
 CREATE INDEX "idx_articles_workspace_status" ON "articles" USING btree ("workspace_id","status");--> statement-breakpoint
 CREATE UNIQUE INDEX "uq_articles_integration_doc" ON "articles" USING btree ("integration_id","source_doc_token");--> statement-breakpoint
 CREATE INDEX "idx_articles_doc_updated_at" ON "articles" USING btree ("integration_id","source_doc_token","source_updated_at");
+
+-- article_covers
+ALTER TABLE "article_covers" ADD CONSTRAINT "article_covers_article_id_articles_id_fk" FOREIGN KEY ("article_id") REFERENCES "public"."articles"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "article_covers" ADD CONSTRAINT "article_covers_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "idx_article_covers_article_created_at" ON "article_covers" USING btree ("article_id","created_at");--> statement-breakpoint
+CREATE INDEX "idx_article_covers_article_platform_preset" ON "article_covers" USING btree ("article_id","platform_type","preset_key");--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_article_covers_active" ON "article_covers" ("article_id","platform_type","preset_key") WHERE "is_active" = true;--> statement-breakpoint
 
 -- article_sources
 -- assets

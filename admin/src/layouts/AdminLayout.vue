@@ -75,6 +75,7 @@ const onLocaleMenuClick = (info: any) => {
         <a-menu-item key="/articles">Articles</a-menu-item>
         <a-sub-menu key="settings" title="Settings">
           <a-menu-item key="/settings/oss">OSS</a-menu-item>
+          <a-menu-item key="/settings/ai">AI</a-menu-item>
           <a-menu-item v-if="showPlatform" key="/settings/worker">Worker</a-menu-item>
         </a-sub-menu>
       </a-menu>
